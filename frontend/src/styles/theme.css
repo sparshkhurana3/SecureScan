@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Monochrome SonaComstar theme. Colour is reserved for severity and scan status badges. */
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --muted: #f4f4f4;
+  --muted-foreground: #5c5c5c;
+  --border: #d9d9d9;
+  --accent: #0a0a0a;
+  --accent-foreground: #ffffff;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", sans-serif;
+}

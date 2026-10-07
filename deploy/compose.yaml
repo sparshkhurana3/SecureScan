@@ -1,0 +1,158 @@
+name: securescan
+
+# Always-on services only. Scanners, the SonarQube server, egress proxies and updaters are
+# started on demand by the worker (see docs/implementation-plan.md section 1.2).
+# Run through `python scripts/dev.py up`, which passes --env-file deploy/.env --env-file deploy/images.env.
+
+x-backend: &backend
+  image: securescan/backend:dev
+  build:
+    context: ..
+    dockerfile: deploy/backend/Dockerfile
+    args:
+      PYTHON_IMAGE: ${IMG_PYTHON:?run pin-images first}
+  restart: unless-stopped
+  environment: &backend-env
+    SECURESCAN_DATABASE_URL: postgresql+psycopg://securescan@db:5432/securescan?sslmode=verify-full&sslrootcert=/run/secrets/tls_ca
+    SECURESCAN_DATABASE_PASSWORD_FILE: /run/secrets/securescan_db_password
+    SECURESCAN_PUBLIC_URL: ${SECURESCAN_PUBLIC_URL:-https://securescan.localtest.me:8443}
+    SECURESCAN_DEFECTDOJO_PUBLIC_URL: ${SECURESCAN_DEFECTDOJO_PUBLIC_URL:-https://dojo.securescan.localtest.me:8443}
+    SECURESCAN_COOKIE_DOMAIN: ${SECURESCAN_COOKIE_DOMAIN:-securescan.localtest.me}
+    SECURESCAN_OIDC_ISSUER: ${SECURESCAN_OIDC_ISSUER:-}
+    SECURESCAN_OIDC_CLIENT_ID: ${SECURESCAN_OIDC_CLIENT_ID:-}
+    SECURESCAN_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+    SECURESCAN_MASTER_KEY_FILE: /run/secrets/securescan_master_key
+    SECURESCAN_LOG_LEVEL: ${SECURESCAN_LOG_LEVEL:-INFO}
+
+services:
+  db:
+    image: ${IMG_POSTGRES:?run pin-images first}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/entrypoint-ssl.sh"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
+    secrets:
+      - postgres_superuser_password
+      - securescan_db_password
+      - defectdojo_db_password
+      - sonarqube_db_password
+      - pg_server_cert
+      - pg_server_key
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./postgres/entrypoint-ssl.sh:/entrypoint-ssl.sh:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["migrate"]
+    secrets: [securescan_db_password, tls_ca]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+
+  api:
+    <<: *backend
+    command: ["api"]
+    secrets: [securescan_db_password, tls_ca, oidc_client_secret, securescan_master_key]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    networks: [frontend, backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      SECURESCAN_DOCKER_HOST: tcp://socket-proxy:2375
+      SECURESCAN_DATA_ROOT: /var/lib/securescan
+    secrets: [securescan_db_password, tls_ca, oidc_client_secret, securescan_master_key]
+    volumes:
+      - securescan_data:/var/lib/securescan
+      - artifacts:/var/lib/securescan/artifacts
+      - content:/var/lib/securescan/content
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    networks: [backend, docker]
+
+  gateway:
+    image: securescan/gateway:dev
+    build:
+      context: ..
+      dockerfile: deploy/gateway/Dockerfile
+      args:
+        NODE_IMAGE: ${IMG_NODE:?run pin-images first}
+        NGINX_IMAGE: ${IMG_NGINX:?run pin-images first}
+    restart: unless-stopped
+    ports:
+      - "${SECURESCAN_PORT:-8443}:8443"
+    secrets:
+      - source: tls_cert
+        target: tls_cert
+      - source: tls_key
+        target: tls_key
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [frontend, backend]
+
+  # Placeholder policy; the exact allowlist comes from spike S2 (docs/spikes) and is filled in at M3.
+  socket-proxy:
+    image: ${IMG_SOCKET_PROXY:?run pin-images first}
+    restart: unless-stopped
+    env_file: ./socket-proxy/args.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [docker]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+networks:
+  frontend: {}
+  backend: {}
+  docker:
+    internal: true
+  sonarqube:
+    internal: true
+  dast:
+    internal: true
+  egress: {}
+
+volumes:
+  securescan_data: { name: securescan_data }
+  pgdata: { name: securescan_pgdata }
+  artifacts: { name: securescan_artifacts }
+  content: { name: securescan_content }
+  grype_db: { name: securescan_grype_db }
+  odc_data: { name: securescan_odc_data }
+  sonarqube_data: { name: securescan_sonarqube_data }
+  sonarqube_extensions: { name: securescan_sonarqube_extensions }
+  sonarqube_logs: { name: securescan_sonarqube_logs }
+
+secrets:
+  postgres_superuser_password: { file: ./secrets/postgres_superuser_password }
+  securescan_db_password: { file: ./secrets/securescan_db_password }
+  defectdojo_db_password: { file: ./secrets/defectdojo_db_password }
+  sonarqube_db_password: { file: ./secrets/sonarqube_db_password }
+  securescan_master_key: { file: ./secrets/securescan_master_key }
+  oidc_client_secret: { file: ./secrets/oidc_client_secret }
+  tls_cert: { file: ./secrets/tls/server.crt }
+  tls_key: { file: ./secrets/tls/server.key }
+  tls_ca: { file: ./secrets/tls/ca.crt }
+  pg_server_cert: { file: ./secrets/tls/server.crt }
+  pg_server_key: { file: ./secrets/tls/server.key }

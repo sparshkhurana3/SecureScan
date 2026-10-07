@@ -1,0 +1,10 @@
+# Skeleton. Fill in during M1 (spike S7) after the first real runs, then keep current.
+# Each tool lists rule ids or titles that must appear in its report for this app.
+app: csharp-planted
+tools:
+  semgrep: []
+  gitleaks: []
+  grype: []
+  dependency-check: []
+  spotbugs: []
+  sonarqube: []
