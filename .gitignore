@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+
+# Local deployment state and secrets
+deploy/.env
+deploy/images.env
+deploy/secrets/*
+!deploy/secrets/README.md
+!deploy/secrets/.gitkeep
+
+# External fixtures and spike scratch
+fixtures/external/
+spikes/**/.data/
+
+# Keys and misc
+*.pem
+*.key
+*.age
+.DS_Store
