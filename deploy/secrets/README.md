@@ -5,7 +5,8 @@ Files in this directory are mounted as Docker secrets. Everything except this RE
 `python scripts/dev.py secrets init` creates every secret that can be generated (random values, no trailing newline):
 `postgres_superuser_password`, `securescan_db_password`, `defectdojo_db_password`, `sonarqube_db_password`,
 `securescan_master_key`, `oidc_client_secret` (empty placeholder until Entra is configured), and from M4:
-`dd_admin_password`, `dd_secret_key`, `dd_credential_aes_256_key`, `sonarqube_admin_password`.
+`dd_admin_password`, `dd_secret_key`, `dd_credential_aes_256_key` (32 characters), `dd_database_url` (derived from
+`defectdojo_db_password`: DefectDojo reads its database URL, password included, from this file), `sonarqube_admin_password`.
 
 `python scripts/dev.py certs` creates `tls/ca.crt`, `tls/server.crt`, `tls/server.key` (self-signed, development only).
 

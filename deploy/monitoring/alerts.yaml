@@ -1,0 +1,197 @@
+# Example Prometheus alert rules for SecureScan (plan M11 task 5; the "Observability and operations" table of the design).
+#
+# Load it from the corporate Prometheus:   rule_files: ["/etc/prometheus/rules/securescan-alerts.yaml"]
+# Check it with:                            promtool check rules deploy/monitoring/alerts.yaml
+#
+# Scrape the api (`/metrics` on port 8000) and the worker (port 9100); neither is published by Compose (docs/install.md
+# shows how to reach them). The rules use max() / sum() over every instance, so they do not depend on your `job` labels.
+# Thresholds are the design's; change them here, not in the application. Each alert names the runbook to open.
+#
+# Metrics without a rule here, for dashboards: securescan_jobs_total, securescan_job_duration_seconds,
+# securescan_github_rate_limit_remaining, securescan_egress_proxy_up, securescan_periodic_runs_total, securescan_logins_total,
+# securescan_image_proposals_pending.
+groups:
+  - name: securescan-queue-and-jobs
+    rules:
+      - alert: SecureScanQueueStuck
+        expr: max(securescan_oldest_queued_job_age_seconds) > 1800
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "The oldest queued scan job has waited more than 30 minutes"
+          description: "Is the worker running, and are the concurrency caps or a stuck tool holding the queue? docs/runbooks/stuck-scan.md"
+
+      - alert: SecureScanToolFailureRate
+        expr: |
+          (
+            sum by (tool) (increase(securescan_jobs_total{state=~"failed|timed_out"}[1h]))
+            / sum by (tool) (increase(securescan_jobs_total[1h]))
+          ) > 0.2
+          and sum by (tool) (increase(securescan_jobs_total[1h])) >= 5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 20 percent of the {{ $labels.tool }} jobs failed in the last hour"
+          description: "At least five jobs ran. Look at the job outcomes in the portal; after an image or content update, roll it back. docs/runbooks/content-update-failed.md"
+
+      - alert: SecureScanQueueDepthHigh
+        expr: sum(securescan_queue_depth{queue="scans"}) > 200
+        for: 30m
+        labels: {severity: info}
+        annotations:
+          summary: "More than 200 scan jobs are waiting"
+          description: "Raise the worker concurrency or add CPU (design: growing on one machine), or check for a stuck tool."
+
+  - name: securescan-defectdojo-import
+    rules:
+      - alert: SecureScanImportLag
+        expr: max(securescan_import_lag_seconds) > 3600
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "A DefectDojo import has been pending for more than an hour"
+          description: "DefectDojo is probably unreachable or slow. Nothing is lost: imports are retried. docs/runbooks/defectdojo-unreachable.md"
+
+      - alert: SecureScanImportDeadLetter
+        expr: max(securescan_import_dead_letters) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: "DefectDojo imports exhausted their retries (dead letters)"
+          description: "A report was not imported. Read the failure in Settings, fix the cause, then requeue. docs/runbooks/defectdojo-unreachable.md"
+
+  - name: securescan-integrations
+    rules:
+      - alert: SecureScanGitHubPollStale
+        # Only after the poller has succeeded once (the gauge is 0 until then, for example when GitHub is not configured).
+        expr: max(securescan_github_poll_last_success_timestamp) > 0 and (time() - max(securescan_github_poll_last_success_timestamp)) > 3600
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "No successful GitHub poll in the last hour"
+          description: "Check Settings -> GitHub (rate limit, key, installation) and the egress proxy. docs/runbooks/github-app-key-rotation.md"
+
+      - alert: SecureScanSonarQubeSlowStart
+        expr: max(securescan_sonarqube_start_seconds) > 300
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: "SonarQube needed more than 5 minutes to start"
+          description: "Check vm.max_map_count, memory and the SonarQube volume; docker logs sonarqube. docs/runbooks/sonarqube-upgrade.md"
+
+      - alert: SecureScanCredentialsExpiring
+        expr: max(securescan_credentials_expiring) > 0
+        for: 1h
+        labels: {severity: info}
+        annotations:
+          summary: "{{ $value }} stored credential(s) expire soon"
+          description: "Vendor tokens, deploy keys or the NVD key. Settings -> Credentials. docs/runbooks/credential-rotation.md"
+
+  - name: securescan-capacity
+    rules:
+      - alert: SecureScanDiskUsage
+        expr: max by (volume) (securescan_disk_used_ratio) > 0.8
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "The {{ $labels.volume }} volume is more than 80 percent full"
+          description: "History, reports and raw reports are kept forever by design: grow the disk. Workspaces are removed after each job; look for orphans. docs/runbooks/stuck-scan.md"
+
+      # The database volume is not visible to the application. If node_exporter runs on the host, alert on Docker's root:
+      # - alert: SecureScanDockerRootDisk
+      #   expr: 1 - node_filesystem_avail_bytes{mountpoint="/var/lib/docker"} / node_filesystem_size_bytes{mountpoint="/var/lib/docker"} > 0.8
+      #   for: 15m
+      #   labels: {severity: warning}
+      #   annotations: {summary: "Docker's data root is more than 80 percent full (PostgreSQL volume, images, volumes)"}
+
+      - alert: SecureScanHostCheckFailed
+        expr: min(securescan_host_check_ok) == 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: "The worker's host check failed (cgroup v2, kernel limits or Docker version)"
+          description: "Run bash scripts/check_host.sh on the machine. SECURESCAN_HOST_CHECK=enforce stops the worker."
+
+  - name: securescan-feeds
+    rules:
+      - alert: SecureScanVulnerabilityDatabaseStale
+        expr: max by (feed) (securescan_feed_age_seconds{feed=~"grype_db|nvd_data"}) > 7 * 86400
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "The {{ $labels.feed }} vulnerability database is more than 7 days old"
+          description: "Scans against stale data report too little. Check the updater's egress hosts and the NVD API key. docs/runbooks/content-update-failed.md"
+
+      - alert: SecureScanRulesOrTemplatesStale
+        expr: max by (feed) (securescan_feed_age_seconds{feed=~"semgrep_rules|nuclei_templates"}) > 30 * 86400
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "The {{ $labels.feed }} content is more than 30 days old"
+          description: "The weekly update did not promote a new version, usually because the regression check failed. docs/runbooks/content-update-failed.md"
+
+  - name: securescan-backup
+    rules:
+      - alert: SecureScanBackupOld
+        # 26 hours: the nightly backup plus two hours of slack. The value is 0 until the first verified off-machine backup.
+        expr: time() - max(securescan_backup_last_success_timestamp) > 26 * 3600
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "No verified off-machine backup in the last 26 hours"
+          description: "Read /var/log/securescan-backup.log. A backup that is not copied off the machine does not count. docs/runbooks/restore.md"
+
+  - name: securescan-security
+    rules:
+      - alert: SecureScanBreakGlassLogin
+        # The DefectDojo `admin` account or the SonarQube admin token was used. Expected only during an incident or an upgrade.
+        expr: sum by (tool) (increase(securescan_break_glass_logins_total[15m])) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: "A break-glass admin account was used ({{ $labels.tool }})"
+          description: "Confirm who did it and why; the audit log and the tool's own log show the time and address."
+
+      - alert: SecureScanLoginFailures
+        expr: sum(increase(securescan_logins_total{outcome!="success"}[10m])) > 20
+        for: 0m
+        labels: {severity: info}
+        annotations:
+          summary: "More than 20 failed or denied sign-ins in 10 minutes"
+          description: "Entra enforces MFA; denied sign-ins here mean users without the Admin or Analyst role. Check the audit log."
+
+  - name: securescan-api
+    rules:
+      - alert: SecureScanApiLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(securescan_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "API 95th percentile latency is above 2 seconds"
+          description: "Check database load and slow history queries (docs/runbooks/performance.md)."
+
+      - alert: SecureScanApiErrors
+        expr: |
+          sum(rate(securescan_http_request_duration_seconds_count{status=~"5.."}[5m]))
+          / sum(rate(securescan_http_request_duration_seconds_count[5m])) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5 percent of API requests fail with a server error"
+          description: "docker logs securescan-api-1; check the database and DefectDojo."
+
+      - alert: SecureScanApiDown
+        expr: absent(securescan_up{component="api"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "The SecureScan api exports no metrics"
+          description: "The api is down or Prometheus cannot reach it. docker compose ps; docs/runbooks/release-upgrade.md has the rollback."
+
+      - alert: SecureScanWorkerDown
+        expr: absent(securescan_up{component="worker"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "The SecureScan worker exports no metrics"
+          description: "No scan is running. The worker stops at start when the host check fails: docker logs securescan-worker-1."

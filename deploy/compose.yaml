@@ -4,6 +4,11 @@ name: securescan
 # started on demand by the worker (see docs/implementation-plan.md section 1.2).
 # Run through `python scripts/dev.py up`, which passes --env-file deploy/.env --env-file deploy/images.env.
 
+# DefectDojo (nginx, uwsgi, celerybeat, celeryworker, initializer, valkey) comes from the vendored upstream
+# Compose file plus our override; see compose.defectdojo.yaml. Needs Docker Compose 2.24 or later.
+include:
+  - path: ./compose.defectdojo.yaml
+
 x-backend: &backend
   image: securescan/backend:dev
   build:
@@ -23,6 +28,35 @@ x-backend: &backend
     SECURESCAN_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
     SECURESCAN_MASTER_KEY_FILE: /run/secrets/securescan_master_key
     SECURESCAN_LOG_LEVEL: ${SECURESCAN_LOG_LEVEL:-INFO}
+    SECURESCAN_DEFECTDOJO_VERSION: ${DJANGO_VERSION:-3.4.0}
+    # DAST scope (FR-23): comma-separated CIDRs a target must resolve into; empty = only hosts an Admin approved.
+    SECURESCAN_DAST_ALLOWED_CIDRS: ${SECURESCAN_DAST_ALLOWED_CIDRS:-}
+    SECURESCAN_DAST_MAX_RPS: ${SECURESCAN_DAST_MAX_RPS:-100}
+    PYTHONDONTWRITEBYTECODE: "1"  # the root filesystem is read-only; bytecode is precompiled in the image
+
+# Container hardening of the always-on set (plan M11 task 1, docs/security-checklist.md).
+#   read_only + tmpfs      the root filesystem cannot be written; only volumes and the listed tmpfs are writable.
+#   cap_drop ALL           no Linux capabilities; a service that needs one adds it back by name (db only).
+#   no-new-privileges      a process cannot gain privileges through setuid binaries.
+# Exceptions, because the upstream images need them (docs/security-checklist.md lists them):
+#   * db (PostgreSQL): writable root filesystem and five capabilities, see the service.
+#   * DefectDojo's services (nginx, uwsgi, celerybeat, celeryworker, initializer, valkey): defined by the vendored upstream
+#     file and defectdojo/override.yaml, which Compose does not let this file override. docs/build-notes/M11.md holds the
+#     ready-to-paste hardening for override.yaml (cap_drop, no-new-privileges, limits); read_only stays off there because
+#     uwsgi and celery write to /app and /tmp.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+# The backend image runs as uid 1000 (user `app`, home /home/app). Python, git, ssh and WeasyPrint's font cache
+# write under the home directory and /tmp: both are small in-memory filesystems that vanish on restart.
+# `noexec` is deliberately not set on /tmp: git runs a credential helper script from there (M3). Revisit after the
+# first Ubuntu run (docs/build-notes/M11.md).
+x-backend-tmpfs: &backend-tmpfs
+  tmpfs:
+    - /tmp:size=512m,mode=1777,nosuid,nodev
+    - /home/app:size=128m,mode=0700,uid=1000,gid=1000,nosuid,nodev
 
 services:
   db:
@@ -43,52 +77,148 @@ services:
       - pgdata:/var/lib/postgresql
       - ./postgres/entrypoint-ssl.sh:/entrypoint-ssl.sh:ro
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    networks: [backend]
+    networks: [backend, dojo]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 3s
       retries: 20
+    # Hardening. PostgreSQL is the documented exception to read_only: the official image's entrypoint runs as root,
+    # chowns the data directory and the TLS key directory (/var/lib/pg-tls, entrypoint-ssl.sh) and then drops to the
+    # postgres user. That needs five capabilities and a writable root filesystem; everything else is dropped.
+    # If the container exits with "Operation not permitted", `docker logs securescan-db-1` names the call; add
+    # the capability here and record it in docs/security-checklist.md.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 512mb
+    pids_limit: 1024
+    stop_grace_period: 120s
+    deploy:
+      resources:
+        limits: { cpus: "6", memory: 12g }
 
   migrate:
-    <<: *backend
+    <<: [*backend, *hardened, *backend-tmpfs]
     restart: "no"
     command: ["migrate"]
     secrets: [securescan_db_password, tls_ca]
     depends_on:
       db: { condition: service_healthy }
     networks: [backend]
+    # The seeders read scanners/profiles; the migration reads Procrastinate's SQL from the installed package.
+    environment:
+      <<: *backend-env
+      SECURESCAN_SCANNERS_DIR: /app/scanners
+    volumes:
+      - ../scanners:/app/scanners:ro
+    pids_limit: 256
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1g }
 
   api:
-    <<: *backend
+    <<: [*backend, *hardened, *backend-tmpfs]
     command: ["api"]
+    environment:
+      <<: *backend-env
+      SECURESCAN_SCANNERS_DIR: /app/scanners
     secrets: [securescan_db_password, tls_ca, oidc_client_secret, securescan_master_key]
+    # The api writes uploads and re-rendered reports under the artifacts volume (shared with the worker) and reads the
+    # catalogue and the lock file (profile validation, the Settings page of scanner images).
+    volumes:
+      - artifacts:/var/lib/securescan/artifacts
+      - ../scanners:/app/scanners:ro
+      - ./images.lock.yaml:/app/deploy/images.lock.yaml:ro
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    networks: [frontend, backend]
+    networks: [frontend, backend, dojo]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 10s
       timeout: 3s
       retries: 10
+    pids_limit: 512
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 3g }
 
   worker:
-    <<: *backend
+    <<: [*backend, *hardened, *backend-tmpfs]
     command: ["worker"]
+    stop_grace_period: 120s
+    pids_limit: 1024
+    deploy:
+      resources:
+        limits: { cpus: "3", memory: 6g }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9100/metrics')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     environment:
       <<: *backend-env
       SECURESCAN_DOCKER_HOST: tcp://socket-proxy:2375
       SECURESCAN_DATA_ROOT: /var/lib/securescan
-    secrets: [securescan_db_password, tls_ca, oidc_client_secret, securescan_master_key]
+      SECURESCAN_SCANNERS_DIR: /app/scanners
+      # The planted applications of the regression suite (mounted below) and the squid image of the egress proxy.
+      SECURESCAN_REGRESSION_FIXTURES_DIR: /app/regression/sample-apps
+      SECURESCAN_REGRESSION_APPS_DIR: /app/regression/sample-apps  # the same directory, for the content updaters' gate (M8)
+      SECURESCAN_EGRESS_IMAGE: ${IMG_SQUID:-}
+      # auto = refuse to start scans when cgroup v2 or the kernel limits are missing (see docs/install.md); warn only to diagnose.
+      SECURESCAN_HOST_CHECK: ${SECURESCAN_HOST_CHECK:-auto}
+      # Scanner images pinned by digest (deploy/images.env, written by `dev.py pin-images`); the catalogue
+      # refers to them by their lock name. Each new tool adds its line here (M8, M9).
+      SECURESCAN_IMAGE_SEMGREP: ${IMG_SEMGREP:?run pin-images first}
+      SECURESCAN_IMAGE_GITLEAKS: ${IMG_GITLEAKS:?run pin-images first}
+      # SonarQube on demand: the server's database password and the admin password the worker sets and uses.
+      SECURESCAN_SONARQUBE_DB_PASSWORD_FILE: /run/secrets/sonarqube_db_password
+      SECURESCAN_SONARQUBE_ADMIN_PASSWORD_FILE: /run/secrets/sonarqube_admin_password
+      # Deploy-key (SSH) clones of vendor repositories verify the host against this file (deploy/known_hosts).
+      SECURESCAN_SSH_KNOWN_HOSTS_FILE: /app/deploy/known_hosts
+    secrets:
+      - securescan_db_password
+      - tls_ca
+      - oidc_client_secret
+      - securescan_master_key
+      - sonarqube_db_password
+      - sonarqube_admin_password
     volumes:
       - securescan_data:/var/lib/securescan
       - artifacts:/var/lib/securescan/artifacts
       - content:/var/lib/securescan/content
+      - ../scanners:/app/scanners:ro  # the catalogue, profiles and Gitleaks rule file (no docker socket here)
+      - ./images.lock.yaml:/app/deploy/images.lock.yaml:ro  # the monthly image proposals compare against it
+      - ./known_hosts:/app/deploy/known_hosts:ro  # SSH host keys for deploy-key clones
+      - ../content/semgrep-rules.lock:/app/content/semgrep-rules.lock:ro  # pins the semgrep-rules commit (updater)
+      - ../backend/tests/fixtures/sample-apps:/app/regression/sample-apps:ro  # planted apps of the regression suite
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    networks: [backend, docker]
+      socket-proxy: { condition: service_started }
+    networks: [backend, docker, dojo]
+
+  # One-shot DefectDojo setup (plan M4 task 2): service accounts and their tokens, deduplication, product
+  # types. Idempotent; runs again on every `up` and retries until DefectDojo answers.
+  dojo-init:
+    <<: [*backend, *hardened, *backend-tmpfs]
+    restart: on-failure
+    command: ["dojo-init"]
+    environment:
+      <<: *backend-env
+      SECURESCAN_DEFECTDOJO_ADMIN_PASSWORD_FILE: /run/secrets/dojo_init_admin_password
+    pids_limit: 256
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1g }
+    secrets: [securescan_db_password, tls_ca, securescan_master_key, dojo_init_admin_password]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      uwsgi: { condition: service_started }
+    networks: [backend, dojo]
 
   gateway:
     image: securescan/gateway:dev
@@ -108,9 +238,25 @@ services:
         target: tls_key
     depends_on:
       api: { condition: service_healthy }
-    networks: [frontend, backend]
+    networks: [frontend, backend, dojo]
+    # nginx-unprivileged runs as uid 101 and keeps its pid file and temporary files under /tmp (see nginx.conf);
+    # /var/cache/nginx is for builds of the image that still use it.
+    <<: *hardened
+    tmpfs:
+      - /tmp:size=128m,mode=1777,nosuid,nodev
+      - /var/cache/nginx:size=64m,mode=0755,uid=101,gid=101,nosuid,nodev
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -q -O /dev/null https://127.0.0.1:8443/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    pids_limit: 256
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512m }
 
-  # Placeholder policy; the exact allowlist comes from spike S2 (docs/spikes) and is filled in at M3.
+  # Allowlist: deploy/socket-proxy/args.env (written in M3 from the Docker SDK request shapes; spike S2 confirms it).
   socket-proxy:
     image: ${IMG_SOCKET_PROXY:?run pin-images first}
     restart: unless-stopped
@@ -121,17 +267,35 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # The image is FROM scratch (no shell, no wget), so it has no health check; the worker's host check reads
+    # GET /_ping through it at start and the worker's own health reflects a broken connection.
+    # Least privilege: run as the nobody user in the Docker socket's group instead of root. Set in deploy/.env:
+    #   SOCKET_PROXY_USER=65534:<gid>      with <gid> from `stat -c %g /var/run/docker.sock`
+    # The default (root) works everywhere; docs/install.md asks for the line on the production machine.
+    user: "${SOCKET_PROXY_USER:-0:0}"
+    pids_limit: 64
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128m }
 
+# `sonarqube`, `dast` and `egress` are used only by containers the worker starts on demand, and Compose does not create
+# a network that no service joins. They are therefore external: `python scripts/dev.py up` creates them first
+# (`dev.py networks`). Without dev.py run: docker network create --internal securescan_sonarqube (and securescan_dast),
+# docker network create securescan_egress.
 networks:
   frontend: {}
   backend: {}
   docker:
     internal: true
   sonarqube:
-    internal: true
+    name: securescan_sonarqube
+    external: true
   dast:
-    internal: true
-  egress: {}
+    name: securescan_dast
+    external: true
+  egress:
+    name: securescan_egress
+    external: true
 
 volumes:
   securescan_data: { name: securescan_data }
@@ -148,7 +312,9 @@ secrets:
   postgres_superuser_password: { file: ./secrets/postgres_superuser_password }
   securescan_db_password: { file: ./secrets/securescan_db_password }
   defectdojo_db_password: { file: ./secrets/defectdojo_db_password }
+  dojo_init_admin_password: { file: ./secrets/dd_admin_password }
   sonarqube_db_password: { file: ./secrets/sonarqube_db_password }
+  sonarqube_admin_password: { file: ./secrets/sonarqube_admin_password }
   securescan_master_key: { file: ./secrets/securescan_master_key }
   oidc_client_secret: { file: ./secrets/oidc_client_secret }
   tls_cert: { file: ./secrets/tls/server.crt }

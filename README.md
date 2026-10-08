@@ -7,6 +7,10 @@ One Ubuntu 24 machine, Docker Compose.
 - Design: [docs/design.md](docs/design.md)
 - Build plan (milestones M0-M12): [docs/implementation-plan.md](docs/implementation-plan.md)
 - Progress: [docs/progress.md](docs/progress.md) - Decisions: [docs/decisions.md](docs/decisions.md)
+- Install on the Ubuntu machine: [docs/install.md](docs/install.md) - Security checklist: [docs/security-checklist.md](docs/security-checklist.md)
+- Operations: [docs/runbooks/](docs/runbooks/) (stuck scans, DefectDojo, content updates, upgrades, restore drill, rotation, image approvals, performance),
+  `scripts/check_host.sh`, `scripts/backup.sh`, `scripts/restore.sh`, alert rules in [deploy/monitoring/alerts.yaml](deploy/monitoring/alerts.yaml)
+- Adding or bumping a scanner: [scanners/README.md](scanners/README.md); regression suite: [scanners/regression/README.md](scanners/regression/README.md)
 
 ## Quick start (Ubuntu 24)
 

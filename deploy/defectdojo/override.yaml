@@ -1,0 +1,165 @@
+# Overrides applied to the vendored upstream DefectDojo 3.4.0 file (see compose.defectdojo.yaml).
+#
+# What changes, and why (plan M4 task 1):
+#   * The bundled `postgres` service never starts (profile `disabled`); DefectDojo uses the `defectdojo`
+#     database in SecureScan's shared `db` container, over TLS, verified against our CA.
+#   * Secrets come from Docker secrets (`DD_*_FILE`), not from environment values: the database URL (with
+#     its password), the Django secret key, the credential AES key, the admin password.
+#   * Images are the ones pinned by digest in deploy/images.lock.yaml (IMG_DD_DJANGO, IMG_DD_NGINX,
+#     IMG_DD_VALKEY from deploy/images.env), pulled from Docker Hub rather than registry.defectdojo.com.
+#   * No port is published: the gateway reaches `nginx:8080` over the internal `dojo` network, after checking
+#     the SecureScan session. The network is `internal`, so DefectDojo cannot reach the Internet.
+#   * `depends_on` on the removed `postgres` service is dropped. DefectDojo's entrypoints wait for `db:5432`
+#     themselves (wait-for-it, up to 300 s). The initializer retries on failure.
+#
+# Names this file relies on (check them against the upstream file whenever it is replaced): services nginx,
+# uwsgi, celerybeat, celeryworker, initializer, postgres, valkey; entrypoint scripts /entrypoint-uwsgi.sh,
+# /entrypoint-celery-beat.sh, /entrypoint-celery-worker.sh, /entrypoint-initializer.sh; mapping-style
+# `environment:` blocks; volume name defectdojo_media (kept, no `dd_media`).
+#
+# Not set here: DD_HASHCODE_FIELDS_PER_SCANNER. The defaults apply until spike S1 (docs/spikes/s1-defectdojo.md)
+# decides the per-tool hash fields; then add it to every service below, as JSON, for example
+#   DD_HASHCODE_FIELDS_PER_SCANNER: '{"Semgrep JSON Report": ["title", "cwe", "file_path", "component_name"]}'
+
+x-dd-env: &dd_env
+  DD_DATABASE_HOST: db
+  DD_DATABASE_PORT: "5432"
+  DD_DATABASE_URL_FILE: /run/secrets/dd_database_url
+  DD_SECRET_KEY_FILE: /run/secrets/dd_secret_key
+  DD_CREDENTIAL_AES_256_KEY_FILE: /run/secrets/dd_credential_aes_256_key
+  DD_SITE_URL: "${SECURESCAN_DEFECTDOJO_PUBLIC_URL:-https://dojo.securescan.localtest.me:8443}"
+  DD_ALLOWED_HOSTS: "${DD_HOST:-dojo.securescan.localtest.me},nginx,uwsgi,localhost"
+  DD_CSRF_TRUSTED_ORIGINS: "${SECURESCAN_DEFECTDOJO_PUBLIC_URL:-https://dojo.securescan.localtest.me:8443}"
+  DD_OS_MESSAGE_ENABLED: "false"
+  DD_DEDUPLICATION_ASYNC_WAIT_TIMEOUT: "120"
+  DD_SCAN_FILE_MAX_SIZE: "100"
+  DD_DATABASE_READINESS_TIMEOUT: "300"
+  DD_SESSION_COOKIE_SECURE: "True"
+  DD_CSRF_COOKIE_SECURE: "True"
+
+x-dd-secrets: &dd_secrets
+  - dd_database_url
+  - dd_secret_key
+  - dd_credential_aes_256_key
+  - source: dd_tls_ca
+    target: tls_ca
+
+services:
+  nginx:
+    image: "${IMG_DD_NGINX:-defectdojo/defectdojo-nginx:3.4.0}"
+    restart: unless-stopped
+    ports: !reset []
+    networks: [dojo]
+
+  uwsgi:
+    image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
+    restart: unless-stopped
+    entrypoint: !override ["/wait-for-it.sh", "db:5432", "-t", "300", "--", "/entrypoint-uwsgi.sh"]
+    depends_on: !override
+      initializer:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_started
+    environment:
+      <<: *dd_env
+      DD_DATABASE_URL: !reset null
+      DD_SECRET_KEY: !reset null
+      DD_CREDENTIAL_AES_256_KEY: !reset null
+    volumes:
+      - type: bind
+        source: ./defectdojo/extra_settings
+        target: /app/docker/extra_settings
+        read_only: true
+    secrets: *dd_secrets
+    networks: [dojo]
+
+  celerybeat:
+    image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
+    restart: unless-stopped
+    entrypoint: !override ["/wait-for-it.sh", "db:5432", "-t", "300", "--", "/entrypoint-celery-beat.sh"]
+    depends_on: !override
+      initializer:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_started
+    environment:
+      <<: *dd_env
+      DD_DATABASE_URL: !reset null
+      DD_SECRET_KEY: !reset null
+      DD_CREDENTIAL_AES_256_KEY: !reset null
+    volumes:
+      - type: bind
+        source: ./defectdojo/extra_settings
+        target: /app/docker/extra_settings
+        read_only: true
+    secrets: *dd_secrets
+    networks: [dojo]
+
+  celeryworker:
+    image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
+    restart: unless-stopped
+    entrypoint: !override ["/wait-for-it.sh", "db:5432", "-t", "300", "--", "/entrypoint-celery-worker.sh"]
+    depends_on: !override
+      initializer:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_started
+    environment:
+      <<: *dd_env
+      DD_DATABASE_URL: !reset null
+      DD_SECRET_KEY: !reset null
+      DD_CREDENTIAL_AES_256_KEY: !reset null
+    volumes:
+      - type: bind
+        source: ./defectdojo/extra_settings
+        target: /app/docker/extra_settings
+        read_only: true
+    secrets: *dd_secrets
+    networks: [dojo]
+
+  initializer:
+    image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
+    restart: on-failure
+    entrypoint: !override ["/wait-for-it.sh", "db:5432", "-t", "300", "--", "/entrypoint-initializer.sh"]
+    depends_on: !reset null
+    environment:
+      <<: *dd_env
+      DD_DATABASE_URL: !reset null
+      DD_SECRET_KEY: !reset null
+      DD_CREDENTIAL_AES_256_KEY: !reset null
+      DD_ADMIN_PASSWORD_FILE: /run/secrets/dd_admin_password
+    volumes:
+      - type: bind
+        source: ./defectdojo/extra_settings
+        target: /app/docker/extra_settings
+        read_only: true
+    secrets:
+      - dd_database_url
+      - dd_secret_key
+      - dd_credential_aes_256_key
+      - dd_admin_password
+      - source: dd_tls_ca
+        target: tls_ca
+    networks: [dojo]
+
+  # The bundled database is never started: the service stays defined (upstream references it) but only
+  # runs under the profile `disabled`, which nothing activates.
+  postgres:
+    profiles: ["disabled"]
+
+  valkey:
+    image: "${IMG_DD_VALKEY:-valkey/valkey:9.1.2-alpine}"
+    restart: unless-stopped
+    networks: [dojo]
+
+networks:
+  dojo:
+    name: securescan_dojo
+    internal: true
+
+secrets:
+  dd_database_url: { file: ./secrets/dd_database_url }
+  dd_secret_key: { file: ./secrets/dd_secret_key }
+  dd_credential_aes_256_key: { file: ./secrets/dd_credential_aes_256_key }
+  dd_admin_password: { file: ./secrets/dd_admin_password }
+  dd_tls_ca: { file: ./secrets/tls/ca.crt }

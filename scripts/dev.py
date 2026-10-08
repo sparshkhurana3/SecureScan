@@ -15,6 +15,7 @@ import secrets as pysecrets
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,10 +32,18 @@ GENERATED_SECRETS: dict[str, int | None] = {
     "securescan_master_key": 32,
     "dd_admin_password": 24,
     "dd_secret_key": 32,
-    "dd_credential_aes_256_key": 32,
+    "dd_credential_aes_256_key": 16,  # 32 hex characters: DefectDojo wants a 32-character AES-256 key
     "sonarqube_admin_password": 24,
     "oidc_client_secret": None,
 }
+
+# Networks that only on-demand containers join. Compose does not create a network no service uses, so they are
+# declared `external` in compose.yaml and created here (name, internal).
+ON_DEMAND_NETWORKS: list[tuple[str, bool]] = [
+    ("securescan_sonarqube", True),  # SonarQube server and its scanner: no route out
+    ("securescan_dast", True),  # DAST scanners and the target-facing proxy: no route out
+    ("securescan_egress", False),  # the shared squid proxy's way to the internet
+]
 
 TLS_HOSTS = [
     "securescan.localtest.me",
@@ -64,9 +73,35 @@ def compose_base(profiles: list[str] | None = None) -> list[str]:
     dev = DEPLOY / "compose.dev.yaml"
     if dev.exists() and profiles and "dev" in profiles:
         cmd += ["-f", str(dev)]
+    test = DEPLOY / "compose.test.yaml"
+    if test.exists() and profiles and "test" in profiles:
+        cmd += ["-f", str(test)]
     for profile in profiles or []:
         cmd += ["--profile", profile]
     return cmd
+
+
+def ensure_networks() -> int:
+    """Create the on-demand networks that do not exist yet (idempotent)."""
+    for name, internal in ON_DEMAND_NETWORKS:
+        probe = subprocess.run(  # noqa: S603
+            ["docker", "network", "inspect", name], capture_output=True, text=True, check=False  # noqa: S607
+        )
+        if probe.returncode == 0:
+            continue
+        cmd = ["docker", "network", "create"] + (["--internal"] if internal else []) + [name]
+        if run(cmd) != 0:
+            return 1
+    return 0
+
+
+def dd_database_url(password: str) -> str:
+    """DefectDojo's database URL (a secret: it holds the password). TLS is verified against our CA."""
+    quoted = urllib.parse.quote(password, safe="")
+    return (
+        f"postgresql://defectdojo:{quoted}@db:5432/defectdojo"
+        "?sslmode=verify-full&sslrootcert=/run/secrets/tls_ca"
+    )
 
 
 def cmd_secrets_init(_: argparse.Namespace) -> int:
@@ -80,6 +115,16 @@ def cmd_secrets_init(_: argparse.Namespace) -> int:
         path.write_bytes(value)  # binary mode: no CRLF translation, no trailing newline
         path.chmod(0o644)
         print(f"create {name}")
+    # Derived from defectdojo_db_password (DefectDojo reads it through DD_DATABASE_URL_FILE, so the
+    # password never sits in an environment variable).
+    url_path = SECRETS / "dd_database_url"
+    if url_path.exists():
+        print("keep   dd_database_url")
+    else:
+        password = (SECRETS / "defectdojo_db_password").read_bytes().decode("ascii").strip()
+        url_path.write_bytes(dd_database_url(password).encode("ascii"))
+        url_path.chmod(0o644)
+        print("create dd_database_url")
     return 0
 
 
@@ -130,11 +175,33 @@ def cmd_pull_images(_: argparse.Namespace) -> int:
         if name == "IMG_SPOTBUGS_FSB":
             continue  # built locally
         failures += run(["docker", "pull", ref]) != 0
+    failures += pull_approved_overlays()
     return 1 if failures else 0
+
+
+def pull_approved_overlays() -> int:
+    """Pull the images of approved image updates (they are not in images.env). Skipped while the stack is down."""
+    probe = subprocess.run(  # noqa: S603
+        compose_base() + ["exec", "-T", "api", "python", "-m", "securescan.domain.image_updates", "active"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0:
+        print("approved image updates not read (the stack is not running); run pull-images again after `up`")
+        return 0
+    failures = 0
+    for line in probe.stdout.splitlines():
+        ref = line.strip()
+        if ref:
+            failures += run(["docker", "pull", ref]) != 0
+    return failures
 
 
 def cmd_up(args: argparse.Namespace) -> int:
     profiles = args.profile or []
+    if ensure_networks() != 0:
+        return 1
     return run(compose_base(profiles) + ["up", "-d", "--build"])
 
 
@@ -149,7 +216,13 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return run(compose_base(["dev"]) + ["logs", "-f", args.service])
 
 
+def cmd_networks(_: argparse.Namespace) -> int:
+    return ensure_networks()
+
+
 def cmd_migrate(_: argparse.Namespace) -> int:
+    if ensure_networks() != 0:
+        return 1
     return run(compose_base() + ["run", "--rm", "migrate"])
 
 
@@ -169,8 +242,11 @@ def cmd_test(args: argparse.Namespace) -> int:
     if kind == "e2e":
         return run(["npm", "run", "e2e"], cwd=ROOT / "frontend")
     if kind == "regression":
-        print("regression suite arrives with M8/M11", file=sys.stderr)
-        return 1
+        base = compose_base()
+        worker = ["exec", "-T", "worker", "python", "-m", "securescan.domain.regression"]
+        if run(base + worker + ["check"]) != 0:
+            return 1
+        return run(base + worker + ["run", "--kind", "all"])
     return 0
 
 
@@ -216,6 +292,9 @@ def build_parser() -> argparse.ArgumentParser:
     logs = sub.add_parser("logs", help="follow logs of a service")
     logs.add_argument("service")
     logs.set_defaults(func=cmd_logs)
+    sub.add_parser("networks", help="create the on-demand Docker networks").set_defaults(
+        func=cmd_networks
+    )
     sub.add_parser("migrate", help="run database migrations").set_defaults(func=cmd_migrate)
     test = sub.add_parser("test", help="run tests")
     test.add_argument(

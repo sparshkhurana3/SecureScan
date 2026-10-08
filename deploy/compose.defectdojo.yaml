@@ -1,0 +1,18 @@
+# DefectDojo 3.4.0 (open source), run from SecureScan's Compose project (plan M4 task 1).
+#
+# compose.yaml includes this file. It includes two files as ONE application model, merged in order:
+#   1. defectdojo/upstream/docker-compose.yml  the vendored upstream file (version noted in its header)
+#   2. defectdojo/override.yaml                 our changes: the shared PostgreSQL instead of the bundled
+#                                               one, Docker secrets, pinned images, no published ports
+#
+# `project_directory: .` makes every relative path in both files resolve against deploy/, so the
+# secrets are ./secrets/<name> and the extra settings are ./defectdojo/extra_settings.
+#
+# Needs Docker Compose 2.24 or later (`include`, `!reset`, `!override`). Check the merged result with
+#   docker compose --project-directory deploy --env-file deploy/.env --env-file deploy/images.env \
+#       -f deploy/compose.yaml config
+include:
+  - path:
+      - ./defectdojo/upstream/docker-compose.yml
+      - ./defectdojo/override.yaml
+    project_directory: .

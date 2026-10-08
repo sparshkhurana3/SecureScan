@@ -1,0 +1,46 @@
+# Development overlay: a mock OpenID Connect provider and hot-reload mounts.
+# Used only with the `dev` profile: `python scripts/dev.py up --profile dev`
+# (scripts/dev.py adds `-f deploy/compose.dev.yaml` when the profile is `dev`).
+# Never part of a production deployment.
+#
+# Sign-in with the mock provider
+# ------------------------------
+# The mock is reachable under ONE name for both the browser and the api container:
+#   http://mock-oidc.localtest.me:8082/default
+# `localtest.me` resolves to 127.0.0.1 on the public internet (browser side); inside the api container
+# `extra_hosts` maps the same name to the Docker host (`host-gateway`), where port 8082 is published.
+# On its login page type any user name and, in the "Claims" box, the roles claim:
+#   {"roles": ["Admin"]}      or      {"roles": ["Analyst"]}      (no roles = sign-in is refused)
+# See deploy/dev/mock-oidc.json. If the mock does not fit, replace it by Keycloak (plan section 2.2).
+
+services:
+  mock-oidc:
+    profiles: [dev]
+    image: ${IMG_MOCK_OIDC:-ghcr.io/navikt/mock-oauth2-server:2.1.10}
+    restart: unless-stopped
+    environment:
+      JSON_CONFIG_PATH: /config/mock-oidc.json
+      SERVER_PORT: "8080"
+    volumes:
+      - ./dev/mock-oidc.json:/config/mock-oidc.json:ro
+    ports:
+      - "8082:8080"
+    networks: [backend]
+
+  api:
+    environment:
+      SECURESCAN_ENV: dev
+      SECURESCAN_DOCS_ENABLED: "true"
+      SECURESCAN_RELOAD: "1"
+      SECURESCAN_OIDC_ISSUER: http://mock-oidc.localtest.me:8082/default
+      SECURESCAN_OIDC_CLIENT_ID: securescan-dev
+      SECURESCAN_OIDC_CLIENT_SECRET: dev-secret-not-checked-by-the-mock
+    extra_hosts:
+      - "mock-oidc.localtest.me:host-gateway"
+    volumes:
+      # Hot reload: the source tree replaces the installed package inside the image.
+      - ../backend/securescan:/app/.venv/lib/python3.14/site-packages/securescan:ro
+
+  worker:
+    environment:
+      SECURESCAN_ENV: dev

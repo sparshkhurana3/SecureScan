@@ -8,7 +8,8 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
 COPY backend/securescan ./securescan
 COPY backend/README.md ./README.md
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
+# --no-editable: install the wheel into the venv; an editable install would point at /src, which the runtime stage lacks.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
 
 FROM ${PYTHON_IMAGE} AS runtime
 RUN apt-get update \

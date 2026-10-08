@@ -1,0 +1,24 @@
+# Test overlay: publishes the database and DefectDojo on the loopback interface so that the integration and contract
+# tests (backend/tests/integration, backend/tests/contract), which run on the host, can reach them.
+# Used only with the `test` profile: `python scripts/dev.py up --profile test`
+# (scripts/dev.py adds `-f deploy/compose.test.yaml` when the profile is `test`).
+# Never part of a production deployment: the ports are bound to 127.0.0.1, but production publishes nothing but the gateway.
+#
+# Values the tests read (backend/tests/integration/conftest.py has the full recipe):
+#   SECURESCAN_DATABASE_URL       postgresql+psycopg://securescan@localhost:55432/securescan?sslmode=verify-full&sslrootcert=<repo>/deploy/secrets/tls/ca.crt
+#   SECURESCAN_DATABASE_PASSWORD  contents of deploy/secrets/securescan_db_password
+#   DD_URL                        http://127.0.0.1:8080
+#   DD_ADMIN_PASSWORD             contents of deploy/secrets/dd_admin_password
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:${SECURESCAN_TEST_DB_PORT:-55432}:5432"
+
+  nginx:
+    ports:
+      - target: 8080
+        published: ${SECURESCAN_TEST_DD_PORT:-8080}
+        host_ip: 127.0.0.1
+        protocol: tcp
+        mode: host
