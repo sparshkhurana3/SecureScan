@@ -1,10 +1,23 @@
-# Skeleton. Fill in during M1 (spike S7) after the first real runs, then keep current.
-# Each tool lists rule ids or titles that must appear in its report for this app.
+# Expected findings for csharp-planted. Format: scanners/regression/README.md.
+# Every entry below states a weakness that is planted in the code (line numbers read from the files on 2026-10-07).
+# Whether a given tool reports it is NOT verified yet: `verified: false` until the first real run (spike S7) confirms it.
+# Categories are free text on purpose; rule ids are added after a real run, never guessed.
 app: csharp-planted
+schema_version: 1
 tools:
-  semgrep: []
-  gitleaks: []
-  grype: []
-  dependency-check: []
-  spotbugs: []
-  sonarqube: []
+  semgrep:
+    - id: cs-sql-injection
+      expect_category: "SQL injection: SqlCommand built by string concatenation with request input"
+      file: Program.cs
+      line: 15
+      verified: false
+    - id: cs-hardcoded-connection-string
+      expect_category: "hard-coded credential in a connection string"
+      file: Program.cs
+      line: 8
+      verified: false
+  gitleaks: []           # no default Gitleaks rule is known to match a SQL Server connection string; fill after S7
+  grype: []              # no package manifest with dependencies
+  dependency-check: []   # same
+  spotbugs: []           # not applicable: no Java classes
+  sonarqube: []          # not analysed by design: the command-line scanner cannot analyse C# (design, "What each language gets")

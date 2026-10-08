@@ -1,10 +1,38 @@
-# Skeleton. Fill in during M1 (spike S7) after the first real runs, then keep current.
-# Each tool lists rule ids or titles that must appear in its report for this app.
+# Expected findings for python-planted. Format: scanners/regression/README.md.
+# Every entry below states a weakness that is planted in the code (line numbers read from the files on 2026-10-07).
+# Whether a given tool reports it is NOT verified yet: `verified: false` until the first real run (spike S7) confirms it.
+# Categories are free text on purpose; rule ids are added after a real run, never guessed.
 app: python-planted
+schema_version: 1
 tools:
-  semgrep: []
-  gitleaks: []
-  grype: []
-  dependency-check: []
-  spotbugs: []
-  sonarqube: []
+  semgrep:
+    - id: py-shell-injection
+      expect_category: "command injection: subprocess with shell=True and a string built from request input"
+      file: app.py
+      line: 16
+      verified: false
+    - id: py-pickle-loads
+      expect_category: "unsafe deserialization: pickle.loads on request data"
+      file: app.py
+      line: 23
+      verified: false
+    - id: py-flask-debug
+      expect_category: "Flask debug server enabled and bound to all interfaces"
+      file: app.py
+      line: 27
+      verified: false
+  gitleaks:
+    - id: py-hardcoded-secret
+      expect_category: "hard-coded secret / generic API key assigned to SECRET_KEY"
+      file: app.py
+      line: 9
+      verified: false
+      note: "Planted secret is certain; detection by the default Gitleaks rules depends on keyword and entropy rules."
+  grype:
+    - id: py-flask-0-12
+      expect_category: "known vulnerabilities in flask 0.12"
+      file: requirements.txt
+      verified: false
+  dependency-check: []   # Dependency-Check does not read requirements.txt as far as is known; fill after S7.
+  spotbugs: []           # not applicable: no Java classes
+  sonarqube: []          # fill after spike S3

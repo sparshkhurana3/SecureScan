@@ -1,0 +1,372 @@
+<!doctype html>
+{#- SonaComstar default report template. Variables: snapshot (the frozen report data), report_hash,
+    target ("html" for the portal, "pdf" for the PDF) and inline_css (style.css, inlined).
+    Every value is escaped by the renderer; do not use |safe on scanner text. -#}
+{% set h = snapshot.header %}
+{% set s = snapshot.summary %}
+{% set vendor_report = snapshot.kind == "vendor" %}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ h.title }}</title>
+<meta name="author" content="SecureScan, SonaComstar">
+<meta name="description" content="{{ h.report_ref }}">
+<style>{{ inline_css }}</style>
+</head>
+<body class="target-{{ target }}">
+<div class="runref">{{ h.report_ref }}</div>
+
+{# ------------------------------------------------------------------ cover #}
+<section class="cover">
+  <img class="wordmark" src="brand/wordmark.svg" alt="SonaComstar">
+  {% if h.classification_label %}<div class="classification">{{ h.classification_label }}</div>{% endif %}
+  <h1>{{ h.application_name }}</h1>
+  <div class="subtitle">
+    {% if vendor_report %}Vendor security assessment{% else %}Application security report{% endif %}
+    {% if h.version_label %} - {{ h.version_label }}{% endif %}
+  </div>
+
+  <div class="verdict-box verdict-{{ s.verdict }}">
+    <div class="verdict-label">{% if vendor_report %}Assessment verdict{% else %}Policy result{% endif %}</div>
+    <div class="verdict-value">{{ s.verdict_label }}</div>
+    <p class="verdict-note">{{ s.verdict_explanation }}</p>
+  </div>
+
+  <div class="review-line">{{ h.review_label }}{% if snapshot.review.reviewer %} - {{ snapshot.review.reviewer }}, {{ snapshot.review.reviewed_at|utc }}{% endif %}</div>
+
+  <table class="kv doc">
+    <tr><th>Report ID</th><td>{{ h.report_ref }}</td></tr>
+    {% if snapshot.vendor %}
+    <tr><th>Vendor</th><td>{{ snapshot.vendor.name }}</td></tr>
+    <tr><th>Product</th><td>{{ snapshot.vendor.product }}</td></tr>
+    {% endif %}
+    <tr><th>Application</th><td>{{ h.application_name }}{% if h.criticality %} (criticality: {{ h.criticality }}){% endif %}</td></tr>
+    <tr><th>Version</th><td>{{ h.version_label }}{% if h.version_kind %} ({{ h.version_kind }}){% endif %}</td></tr>
+    {% if h.commit_sha %}<tr><th>Commit</th><td class="mono">{{ h.commit_sha }}</td></tr>{% endif %}
+    {% if h.source_digest %}<tr><th>Image digest</th><td class="mono">{{ h.source_digest }}</td></tr>{% endif %}
+    <tr><th>Scan date</th><td>{{ h.scan_date|utc }}</td></tr>
+    <tr><th>Report generated</th><td>{{ h.generated_at|utc }}</td></tr>
+    <tr><th>Tools</th><td>{% for t in h.tools %}{{ t.label }}{% if t.version %} {{ t.version }}{% endif %}{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}</td></tr>
+    <tr><th>Mappings</th><td>OWASP Top 10 {{ h.mapping_versions.owasp_top10 }}; CWE Top 25 {{ h.mapping_versions.cwe_top25 }}</td></tr>
+    <tr><th>Template</th><td>{{ h.template_name }}{% if h.template_version %}, version {{ h.template_version }}{% endif %}</td></tr>
+    <tr><th>Report hash</th><td class="mono">{{ report_hash }}</td></tr>
+  </table>
+</section>
+
+{# ------------------------------------------------------------------ summary #}
+<section>
+  <h2>{% if vendor_report %}Executive summary{% else %}Summary{% endif %}</h2>
+  <p>
+    Overall risk rating: <strong>{{ s.overall_risk }}</strong>.
+    {{ s.counts.total }} open finding{% if s.counts.total != 1 %}s{% endif %}
+    {% if s.triaged_out %}({{ s.triaged_out }} more {% if s.triaged_out == 1 %}was{% else %}were{% endif %} triaged out and
+    {% if s.triaged_out == 1 %}is{% else %}are{% endif %} not counted){% endif %}.
+  </p>
+  <table class="counts">
+    <thead><tr>
+      <th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Info</th><th>Total</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>{{ s.counts.critical }}</td><td>{{ s.counts.high }}</td><td>{{ s.counts.medium }}</td>
+      <td>{{ s.counts.low }}</td><td>{{ s.counts.info }}</td><td>{{ s.counts.total }}</td>
+    </tr></tbody>
+  </table>
+
+  {% if s.top_risks %}
+  <h3>Top risks</h3>
+  <ul class="risks">
+    {% for risk in s.top_risks %}<li>{{ risk }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if s.delta %}
+  <h3>{% if vendor_report %}Delta from the last assessment{% else %}Change since the previous report{% endif %}</h3>
+  <p>
+    Compared with {{ s.delta.previous_ref }}{% if s.delta.previous_version_label %}
+    (version {{ s.delta.previous_version_label }}{% if s.delta.previous_scan_date %}, scanned {{ s.delta.previous_scan_date|utcdate }}{% endif %}){% endif %}:
+    <strong>{{ s.delta.fixed }}</strong> fixed, <strong>{{ s.delta.remaining }}</strong> remaining,
+    <strong>{{ s.delta.new }}</strong> new.
+  </p>
+  {% if s.delta.new_findings %}
+  <p class="label"><strong>New findings</strong></p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for f in s.delta.new_findings %}
+      <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span></td><td>{{ f.title }}</td><td>{{ f.tool }}</td><td class="mono">{{ f.location }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if s.delta.fixed_findings %}
+  <p class="label"><strong>Fixed findings</strong></p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for f in s.delta.fixed_findings %}
+      <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span></td><td>{{ f.title }}</td><td>{{ f.tool }}</td><td class="mono">{{ f.location }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ vendor: scope and delta details #}
+{% if vendor_report %}{% include "vendor/assessment.html" %}{% endif %}
+
+{# ------------------------------------------------------------------ per tool #}
+<section>
+  <h2>Findings by tool</h2>
+  <table>
+    <thead><tr>
+      <th>Tool</th><th class="num">Critical</th><th class="num">High</th><th class="num">Medium</th>
+      <th class="num">Low</th><th class="num">Info</th><th class="num">Total</th>
+    </tr></thead>
+    <tbody>
+    {% for t in s.by_tool %}
+      <tr>
+        <td>{{ t.label }}</td><td class="num">{{ t.counts.critical }}</td><td class="num">{{ t.counts.high }}</td>
+        <td class="num">{{ t.counts.medium }}</td><td class="num">{{ t.counts.low }}</td>
+        <td class="num">{{ t.counts.info }}</td><td class="num"><strong>{{ t.counts.total }}</strong></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">No tool ran.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ------------------------------------------------------------------ per category #}
+<section>
+  <h2>{% if vendor_report %}Findings summary by category{% else %}Findings by category{% endif %}</h2>
+  <p class="small muted">
+    OWASP Top 10 ({{ h.mapping_versions.owasp_top10 }}), by the finding's CWE. Dependency scanner findings are counted under A06.
+  </p>
+  {% set rows = s.by_owasp %}
+  {% set mx = s.owasp_max if s.owasp_max > 0 else 1 %}
+  {% set chart_height = rows|length * 26 + 8 %}
+  <div class="chart-wrap">
+    <svg class="chart" xmlns="http://www.w3.org/2000/svg" width="640" height="{{ chart_height }}" viewBox="0 0 640 {{ chart_height }}" role="img" aria-label="Open findings by OWASP Top 10 category">
+      {% for r in rows %}
+      {% set y = loop.index0 * 26 + 4 %}
+      {% set w = (r.count * 300 / mx)|round|int %}
+      {% set hw = ((r.critical + r.high) * 300 / mx)|round|int %}
+      <text x="0" y="{{ y + 14 }}" font-family="Liberation Sans, Arial, sans-serif" font-size="10.5" fill="#000">{{ r.id }} {{ r.name }}</text>
+      <rect x="290" y="{{ y }}" width="{{ w if w > 0 else 1 }}" height="18" fill="{{ '#8a8a8a' if r.count else '#000' }}"/>
+      {% if hw > 0 %}<rect x="290" y="{{ y }}" width="{{ hw }}" height="18" fill="#000"/>{% endif %}
+      <text x="{{ 290 + (w if w > 0 else 1) + 6 }}" y="{{ y + 14 }}" font-family="Liberation Sans, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#000">{{ r.count }}</text>
+      {% endfor %}
+    </svg>
+    <div class="legend">Black part of a bar: Critical and High findings. Grey part: Medium, Low and Info.</div>
+  </div>
+  <table>
+    <thead><tr><th>Category</th><th class="num">Open findings</th><th class="num">of which Critical or High</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr><td>{{ r.id }} {{ r.name }}</td><td class="num">{{ r.count }}</td><td class="num">{{ r.critical + r.high }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>CWE Top 25 ({{ h.mapping_versions.cwe_top25 }})</h3>
+  {% if s.cwe_top25_present %}
+  <p>{{ s.cwe_top25_present }} of the 25 most dangerous weaknesses {% if s.cwe_top25_present == 1 %}is{% else %}are{% endif %} present.</p>
+  <table>
+    <thead><tr><th class="num">Rank</th><th>Weakness</th><th class="num">Open findings</th></tr></thead>
+    <tbody>
+    {% for e in s.cwe_top25 if e.count > 0 %}
+      <tr><td class="num">{{ e.rank }}</td><td>CWE-{{ e.cwe }} {{ e.name }}</td><td class="num">{{ e.count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>None of the CWE Top 25 weaknesses was found.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ detailed findings #}
+<section>
+  <h2>Detailed findings</h2>
+  {% if snapshot.findings %}
+    {% if snapshot.findings|length > snapshot.detail_limit %}
+    <p class="small muted">The {{ snapshot.detail_limit }} most severe of {{ snapshot.findings|length }} findings are described here. The finding list (CSV) holds all of them.</p>
+    {% endif %}
+    {% for f in snapshot.findings[:snapshot.detail_limit] %}
+    <article class="finding finding-{{ f.severity }}">
+      <h3><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span> {{ f.index }}. {{ f.title }}</h3>
+      <table class="kv">
+        <tr><th>Tool</th><td>{{ f.tool_label }}</td></tr>
+        {% if f.cwe %}<tr><th>Weakness</th><td>{{ f.cwe_label }}{% if f.owasp_id %}; OWASP {{ f.owasp_id }} {{ f.owasp_name }}{% endif %}{% if f.top25_rank %}; CWE Top 25 rank {{ f.top25_rank }}{% endif %}</td></tr>
+        {% elif f.owasp_id %}<tr><th>Category</th><td>OWASP {{ f.owasp_id }} {{ f.owasp_name }}</td></tr>{% endif %}
+        {% if f.cve %}<tr><th>CVE</th><td>{{ f.cve }}{% if f.cvss %} (CVSS {{ f.cvss }}){% endif %}</td></tr>{% endif %}
+        {% if f.component %}<tr><th>Component</th><td>{{ f.component }}{% if f.component_version %} {{ f.component_version }}{% endif %}</td></tr>{% endif %}
+        {% if f.file_path %}<tr><th>Location</th><td class="mono">{{ f.location }}</td></tr>
+        {% elif f.url %}<tr><th>URL</th><td class="mono">{{ f.url }}</td></tr>{% endif %}
+        <tr><th>Status</th><td>{{ f.state_label }}{% if f.vs_previous == "new" %}; new since the previous report{% elif f.vs_previous == "remaining" %}; still present from the previous report{% endif %}</td></tr>
+      </table>
+      {% if f.description %}<div class="label">Description</div><p class="pre">{{ f.description }}</p>{% endif %}
+      {% if f.mitigation %}<div class="label">Remediation</div><p class="pre">{{ f.mitigation }}</p>{% endif %}
+    </article>
+    {% endfor %}
+  {% else %}
+    <p>No open findings.</p>
+  {% endif %}
+
+  {% if snapshot.triaged %}
+  <h3 style="margin-top: 8mm">Triaged out ({{ s.triaged_out }})</h3>
+  <p class="small muted">Marked false positive, risk accepted, out of scope, duplicate or closed in DefectDojo. Not counted above.</p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Status</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for t in snapshot.triaged %}
+      <tr><td><span class="sev sev-{{ t.severity }}">{{ t.severity_label }}</span></td><td>{{ t.title }}</td><td>{{ t.tool_label }}</td><td>{{ t.state_label }}</td><td class="mono">{{ t.location }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ vendor: conditions and review #}
+{% if snapshot.review.conditions %}
+<section>
+  <h2>Conditions</h2>
+  <p>Remediation deadlines attached to the {{ snapshot.review.verdict_label|lower }}.</p>
+  <table>
+    <thead><tr><th>Finding</th><th>Severity</th><th>Location</th><th>Deadline</th></tr></thead>
+    <tbody>
+    {% for c in snapshot.review.conditions %}
+      <tr>
+        <td>{{ c.finding_title or c.finding_hash }}</td>
+        <td>{% if c.severity %}<span class="sev sev-{{ c.severity }}">{{ c.severity_label }}</span>{% endif %}</td>
+        <td class="mono">{{ c.location }}</td><td>{{ c.deadline }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------------ code quality #}
+<section>
+  <h2>Code quality</h2>
+  {% set q = snapshot.code_quality %}
+  {% if q.available %}
+    <p>SonarQube quality gate: <strong>{{ q.quality_gate_label }}</strong>.</p>
+    {% if q.conditions %}
+    <table>
+      <thead><tr><th>Condition</th><th>Result</th><th class="num">Actual</th><th class="num">Threshold</th></tr></thead>
+      <tbody>
+      {% for c in q.conditions %}
+        <tr><td>{{ c.metric }}</td><td>{{ c.status }}</td><td class="num">{{ c.actual }}</td><td class="num">{{ c.threshold }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if q.measures %}
+    <table>
+      <thead><tr><th>Measure</th><th class="num">Value</th></tr></thead>
+      <tbody>
+      {% for m in q.measures %}<tr><td>{{ m.label }}</td><td class="num">{{ m.value }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% else %}
+    <p>{{ q.note or "Not available for this scan." }}</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ components #}
+<section>
+  <h2>Components</h2>
+  {% set c = snapshot.components %}
+  {% if c.available %}
+    <p>{% if c.count is not none %}The software bill of materials lists <strong>{{ c.count }}</strong> components.{% else %}A software bill of materials was produced.{% endif %}</p>
+    {% if c.sbom_files %}
+    <table>
+      <thead><tr><th>SBOM file</th><th>SHA-256</th><th class="num">Size (bytes)</th></tr></thead>
+      <tbody>
+      {% for f in c.sbom_files %}<tr><td>{{ f.filename }}</td><td class="mono">{{ f.sha256 }}</td><td class="num">{{ f.size_bytes }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% else %}
+    <p>{{ c.note or "No software bill of materials was produced." }}</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ coverage #}
+<section>
+  <h2>{% if vendor_report %}Scope and coverage{% else %}Coverage{% endif %}</h2>
+  <p>
+    {% if snapshot.coverage.complete %}Every requested tool ran to completion.{% else %}Coverage is incomplete: read the table below before relying on this report.{% endif %}
+  </p>
+  <table>
+    <thead><tr><th>Tool</th><th>Result</th><th>Notes</th></tr></thead>
+    <tbody>
+    {% for e in snapshot.coverage.entries %}
+      <tr>
+        <td>{{ e.label }}</td><td>{{ e.status|capitalize }}</td>
+        <td>{{ e.reason }}{% if e.exclusions %}<br>Excluded: {{ e.exclusions|join(", ") }}{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3">No tool ran.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if snapshot.coverage.notes %}
+  <ul>{% for n in snapshot.coverage.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if h.tools %}
+  <h3>Tool versions</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>Version</th><th>Image digest</th><th>Content versions</th></tr></thead>
+    <tbody>
+    {% for t in h.tools %}
+      <tr>
+        <td>{{ t.label }}</td><td>{{ t.version }}</td><td class="mono">{{ t.image_digest }}</td>
+        <td>{% for k, v in t.content_versions.items() %}{{ k }}: {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ methodology #}
+<section>
+  <h2>Methodology</h2>
+  {% for paragraph in snapshot.methodology.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+</section>
+
+{# ------------------------------------------------------------------ known limits #}
+<section>
+  <h2>Known limits</h2>
+  <ol class="limits">
+    {% for limit in snapshot.known_limits %}<li>{{ limit }}</li>{% endfor %}
+  </ol>
+</section>
+
+{# ------------------------------------------------------------------ review #}
+<section>
+  <h2>Review</h2>
+  {% set r = snapshot.review %}
+  <table class="kv doc">
+    <tr><th>Review state</th><td>{{ h.review_label }}</td></tr>
+    {% if r.state == "reviewed" %}
+    <tr><th>Reviewing analyst</th><td>{{ r.reviewer }}</td></tr>
+    <tr><th>Date</th><td>{{ r.reviewed_at|utc }}</td></tr>
+    <tr><th>Proposed verdict</th><td>{{ r.proposed_verdict_label }}</td></tr>
+    <tr><th>Verdict decision</th><td><strong>{{ r.verdict_label }}</strong>{% if r.overridden %} (overridden){% else %} (confirmed){% endif %}</td></tr>
+    {% if r.overridden %}<tr><th>Reason for override</th><td class="pre">{{ r.override_reason }}</td></tr>{% endif %}
+    {% if r.internal_notes and not snapshot.vendor_copy %}<tr><th>Internal notes</th><td class="pre">{{ r.internal_notes }}</td></tr>{% endif %}
+    {% else %}
+    <tr><th>Verdict</th><td>{{ r.verdict_label }} (proposed by the policy)</td></tr>
+    {% endif %}
+  </table>
+  <div class="footer-hash">Report hash (SHA-256 of the frozen snapshot): {{ report_hash }}</div>
+</section>
+
+</body>
+</html>

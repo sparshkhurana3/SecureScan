@@ -1,0 +1,79 @@
+{#- Vendor assessment extras. Included by template.html for vendor reports only (snapshot.kind == "vendor").
+    It draws two optional blocks and renders nothing when the snapshot carries neither of them:
+    the scope of the assessment (snapshot.vendor_scope) and the details of the delta from the last
+    assessment (remaining, reopened and triaged findings, tools that could not be compared).
+    Every value is escaped by the renderer; do not use |safe on scanner text. -#}
+{% set scope = snapshot.vendor_scope %}
+{% set delta = snapshot.summary.delta %}
+{% if scope %}
+<section>
+  <h2>Scope of the assessment</h2>
+  <table class="kv doc">
+    {% if scope.hosting_label %}<tr><th>Hosting</th><td>{{ scope.hosting_label }}</td></tr>{% endif %}
+    {% for artefact in scope.artefacts %}
+    <tr><th>Supplied for testing</th><td class="pre">{{ artefact }}</td></tr>
+    {% endfor %}
+    {% if scope.environment_label %}<tr><th>Web scan environment</th><td>{{ scope.environment_label }}</td></tr>{% endif %}
+    {% if scope.authorization_required %}
+    <tr><th>Vendor authorization</th><td>{{ scope.authorization_state }}</td></tr>
+    {% if scope.authorized_from or scope.authorized_until %}
+    <tr><th>Authorized window</th><td>{{ scope.authorized_from|utc }} to {{ scope.authorized_until|utc }}</td></tr>
+    {% endif %}
+    {% if scope.authorization_contact %}<tr><th>Vendor contact</th><td class="pre">{{ scope.authorization_contact }}</td></tr>{% endif %}
+    {% endif %}
+    {% if scope.rule %}<tr><th>Rule for web scans</th><td>{{ scope.rule }}</td></tr>{% endif %}
+    {% if scope.conditions_rule %}<tr><th>Conditions</th><td>{{ scope.conditions_rule }}</td></tr>{% endif %}
+  </table>
+</section>
+{% endif %}
+
+{% if delta and (delta.remaining_findings or delta.reopened_findings or delta.triaged_findings or delta.skipped_tools or delta.notes) %}
+<section>
+  <h2>Delta details</h2>
+  <p>
+    Findings are matched by the hash code DefectDojo gives them.
+    {% if delta.compared_tools %}Compared tools: {{ delta.compared_tools|join(", ") }}.{% endif %}
+    {% if delta.reopened %}{{ delta.reopened }} {% if delta.reopened == 1 %}finding is{% else %}findings are{% endif %} open again after being closed or triaged out in the previous assessment.{% endif %}
+    {% if delta.triaged %}{{ delta.triaged }} {% if delta.triaged == 1 %}finding was{% else %}findings were{% endif %} open before and {% if delta.triaged == 1 %}is{% else %}are{% endif %} now triaged out; {% if delta.triaged == 1 %}it is{% else %}they are{% endif %} not counted as fixed.{% endif %}
+  </p>
+  {% if delta.notes %}
+  <ul>{% for n in delta.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if delta.remaining_findings %}
+  <p class="label"><strong>Remaining findings</strong></p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for f in delta.remaining_findings %}
+      <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span></td><td>{{ f.title }}</td><td>{{ f.tool }}</td><td class="mono">{{ f.location }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if delta.reopened_findings %}
+  <p class="label"><strong>Reopened findings</strong></p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Location</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for f in delta.reopened_findings %}
+      <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span></td><td>{{ f.title }}</td><td>{{ f.tool }}</td><td class="mono">{{ f.location }}</td><td>{{ f.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if delta.triaged_findings %}
+  <p class="label"><strong>Triaged out since the previous assessment</strong></p>
+  <table>
+    <thead><tr><th>Severity</th><th>Finding</th><th>Tool</th><th>Location</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for f in delta.triaged_findings %}
+      <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity_label }}</span></td><td>{{ f.title }}</td><td>{{ f.tool }}</td><td class="mono">{{ f.location }}</td><td>{{ f.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}

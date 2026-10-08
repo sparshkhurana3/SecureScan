@@ -1,0 +1,126 @@
+/* SonaComstar default report template: black and white, A4, severity shown by label and weight.
+   To use the company logo later, drop brand/logo.svg next to wordmark.svg and point the cover
+   image at it (the rule marked LOGO below sets its size). Everything is inlined by the renderer,
+   so this file may refer to local images and fonts under brand/ only. */
+
+:root {
+  --ink: #000;
+  --muted: #444;
+  --rule: #000;
+  --soft: #e6e6e6;
+}
+
+@page {
+  size: A4;
+  margin: 20mm 18mm 22mm 18mm;
+  @bottom-left {
+    content: "SonaComstar - " string(runref);
+    font: 7.5pt "Liberation Sans", Arial, Helvetica, sans-serif;
+    color: #444;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font: 7.5pt "Liberation Sans", Arial, Helvetica, sans-serif;
+    color: #444;
+  }
+}
+
+@page cover {
+  margin: 24mm 22mm 20mm 22mm;
+  @bottom-left { content: none; }
+  @bottom-right { content: none; }
+}
+
+* { box-sizing: border-box; }
+
+html {
+  font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background: #fff;
+  font-size: 9.5pt;
+  line-height: 1.4;
+}
+
+body { margin: 0; }
+
+.runref { string-set: runref content(); height: 0; overflow: hidden; font-size: 0; }
+
+h1, h2, h3, h4 { font-weight: 700; margin: 0; line-height: 1.2; }
+h2 {
+  font-size: 14pt;
+  border-bottom: 1.5pt solid var(--rule);
+  padding-bottom: 2mm;
+  margin: 9mm 0 4mm 0;
+  break-after: avoid;
+}
+h3 { font-size: 10.5pt; margin: 0 0 2mm 0; break-after: avoid; }
+p { margin: 0 0 3mm 0; }
+.muted { color: var(--muted); }
+.small { font-size: 8pt; }
+.mono { font-family: "Liberation Mono", "Courier New", monospace; font-size: 8pt; word-break: break-all; }
+.pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- cover ---------------------------------------------------------------------------- */
+.cover { page: cover; break-after: page; min-height: 240mm; position: relative; }
+.cover .wordmark { height: 11mm; width: auto; display: block; margin-bottom: 30mm; } /* LOGO */
+.cover .classification {
+  display: inline-block; border: 1.5pt solid var(--rule); padding: 1mm 3mm;
+  font-weight: 700; letter-spacing: 0.08em; font-size: 8.5pt; margin-bottom: 8mm;
+}
+.cover h1 { font-size: 26pt; margin-bottom: 3mm; }
+.cover .subtitle { font-size: 13pt; margin-bottom: 14mm; }
+.verdict-box {
+  border: 3pt solid var(--rule); padding: 6mm 8mm; margin: 0 0 12mm 0; break-inside: avoid;
+}
+.verdict-box .verdict-label { font-size: 9pt; letter-spacing: 0.12em; text-transform: uppercase; }
+.verdict-box .verdict-value { font-size: 30pt; font-weight: 800; text-transform: uppercase; line-height: 1.1; }
+.verdict-box .verdict-note { margin: 2mm 0 0 0; font-size: 9pt; }
+.verdict-pass .verdict-value { font-weight: 700; }
+.verdict-fail .verdict-value { font-weight: 900; text-decoration: underline; }
+.review-line { border: 1pt dashed var(--rule); padding: 2mm 3mm; margin: 0 0 8mm 0; font-weight: 700; }
+
+/* ---- tables --------------------------------------------------------------------------- */
+table { width: 100%; border-collapse: collapse; margin: 0 0 5mm 0; }
+th, td { border: 0.5pt solid var(--rule); padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 700; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+table.kv th { width: 34mm; background: #fff; font-weight: 700; }
+table.doc th { width: 42mm; }
+
+/* ---- severity: label and weight, never colour alone ------------------------------------ */
+.sev { text-transform: uppercase; letter-spacing: 0.04em; font-size: 8pt; padding: 0 1.2mm; white-space: nowrap; }
+.sev-critical { font-weight: 900; border: 1.5pt solid var(--rule); background: var(--ink); color: #fff; }
+.sev-high { font-weight: 800; border: 1.5pt solid var(--rule); }
+.sev-medium { font-weight: 700; border: 0.75pt solid var(--rule); }
+.sev-low { font-weight: 400; border: 0.5pt solid var(--rule); }
+.sev-info { font-weight: 400; font-style: italic; border: 0.5pt dotted var(--rule); }
+
+/* ---- summary blocks --------------------------------------------------------------------- */
+.counts { table-layout: fixed; }
+.counts td { text-align: center; font-size: 15pt; font-weight: 700; }
+.counts th { text-align: center; }
+.risks { margin: 0 0 4mm 5mm; padding: 0; }
+.chart-wrap { margin: 0 0 4mm 0; break-inside: avoid; }
+.chart { max-width: 100%; height: auto; }
+.legend { font-size: 8pt; color: var(--muted); }
+
+/* ---- findings --------------------------------------------------------------------------- */
+.finding { border-top: 1pt solid var(--rule); padding-top: 3mm; margin-top: 5mm; }
+.finding h3 { overflow-wrap: anywhere; }
+.finding .label { font-weight: 700; margin: 2mm 0 0.5mm 0; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.05em; }
+.finding-critical, .finding-high { border-top-width: 2.5pt; }
+
+ol.limits { margin: 0 0 0 5mm; padding: 0; }
+ol.limits li { margin-bottom: 2mm; }
+
+.footer-hash { margin-top: 10mm; font-size: 7.5pt; color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---- the portal view (screen); the PDF uses the print rules above ---------------------------- */
+@media screen {
+  html { font-size: 15px; background: #f4f4f4; }
+  body { max-width: 210mm; margin: 0 auto; background: #fff; padding: 20mm 18mm; border: 1px solid #ccc; }
+  .cover { min-height: 0; padding-bottom: 12mm; border-bottom: 3px solid #000; margin-bottom: 8mm; }
+  .cover .wordmark { margin-bottom: 14mm; }
+}

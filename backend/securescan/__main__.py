@@ -1,33 +1,40 @@
-"""Entry point: ``python -m securescan <api|worker|migrate|dojo-init|sonar-init>``."""
+"""Entry point: ``python -m securescan <api|worker|migrate|dojo-init|sonar-init>``.
+
+Each command except ``api`` is ``<module>:run`` returning an exit code. A command whose module does
+not exist yet (later milestones) prints ``<command>: not implemented yet`` and returns 0.
+"""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-import logging
+import importlib
+import os
 import sys
 
 from securescan.config import get_settings
+from securescan.logging import configure_logging
 
-log = logging.getLogger("securescan")
+# command -> (module, function). ``api`` is handled in this file.
+DISPATCH: dict[str, tuple[str, str]] = {
+    "migrate": ("securescan.db.migrate", "run"),
+    "worker": ("securescan.jobs.worker", "run"),
+    "dojo-init": ("securescan.integrations.defectdojo.init", "run"),
+    "sonar-init": ("securescan.integrations.sonarqube.init", "run"),
+}
+COMMANDS = ["api", *DISPATCH]
 
 
 def run_api() -> int:
     import uvicorn
 
-    uvicorn.run("securescan.main:app", host="0.0.0.0", port=8000, log_level="info")  # noqa: S104
-    return 0
-
-
-async def _heartbeat() -> None:
-    # Replaced by the Procrastinate worker in M2.
-    while True:
-        log.info("worker heartbeat")
-        await asyncio.sleep(30)
-
-
-def run_worker() -> int:
-    asyncio.run(_heartbeat())
+    settings = get_settings()
+    uvicorn.run(
+        "securescan.main:app",
+        host="0.0.0.0",  # noqa: S104 - container-internal; only the gateway publishes a port
+        port=8000,
+        log_config=None,  # logging is configured by securescan.logging (JSON lines)
+        reload=settings.is_dev and os.environ.get("SECURESCAN_RELOAD") == "1",
+    )
     return 0
 
 
@@ -36,16 +43,31 @@ def not_implemented(name: str) -> int:
     return 0
 
 
+def dispatch(command: str) -> int:
+    """Run ``command``; returns its exit code."""
+    if command == "api":
+        return run_api()
+    module_name, function_name = DISPATCH[command]
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        # Only a missing target module (or one of its parent packages) means "not built yet";
+        # a missing third-party dependency inside it is a real error.
+        if exc.name and (module_name == exc.name or module_name.startswith(exc.name + ".")):
+            return not_implemented(command)
+        raise
+    function = getattr(module, function_name, None)
+    if function is None:
+        return not_implemented(command)
+    return int(function())
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="securescan")
-    parser.add_argument("command", choices=["api", "worker", "migrate", "dojo-init", "sonar-init"])
+    parser.add_argument("command", choices=COMMANDS)
     args = parser.parse_args(argv)
-    logging.basicConfig(level=get_settings().log_level, format="%(message)s")
-    if args.command == "api":
-        return run_api()
-    if args.command == "worker":
-        return run_worker()
-    return not_implemented(args.command)
+    configure_logging(get_settings().log_level)
+    return dispatch(args.command)
 
 
 if __name__ == "__main__":

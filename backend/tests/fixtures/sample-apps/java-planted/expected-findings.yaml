@@ -1,10 +1,43 @@
-# Skeleton. Fill in during M1 (spike S7) after the first real runs, then keep current.
-# Each tool lists rule ids or titles that must appear in its report for this app.
+# Expected findings for java-planted. Format: scanners/regression/README.md.
+# Every entry below states a weakness that is planted in the code (line numbers read from the files on 2026-10-07).
+# Whether a given tool reports it is NOT verified yet: `verified: false` until the first real run (spike S7) confirms it.
+# Categories are free text on purpose; rule ids are added after a real run, never guessed.
 app: java-planted
+schema_version: 1
 tools:
-  semgrep: []
-  gitleaks: []
-  grype: []
-  dependency-check: []
-  spotbugs: []
-  sonarqube: []
+  semgrep:
+    - id: java-sql-injection
+      expect_category: "SQL injection: query built by string concatenation with request input"
+      file: src/main/java/com/sonacomstar/planted/UserServlet.java
+      line: 25
+      verified: false
+    - id: java-reflected-xss
+      expect_category: "cross-site scripting: request parameter written to the servlet response"
+      file: src/main/java/com/sonacomstar/planted/UserServlet.java
+      line: 28
+      verified: false
+  gitleaks:
+    - id: java-hardcoded-api-key
+      expect_category: "hard-coded secret / generic API key assigned to API_KEY"
+      file: src/main/java/com/sonacomstar/planted/UserServlet.java
+      line: 17
+      verified: false
+      note: "Planted secret is certain; detection by the default Gitleaks rules depends on keyword and entropy rules."
+  grype:
+    - id: java-log4shell
+      expect_category: "known vulnerability: log4j-core 2.14.1 (Log4Shell, CVE-2021-44228)"
+      file: pom.xml
+      verified: false
+      note: "Declared in pom.xml with an explicit version; Grype reads it through the Syft SBOM."
+  dependency-check: []   # log4j-core is declared in pom.xml but is not inside the committed jar: Dependency-Check may find nothing. Fill after S7.
+  spotbugs:
+    - id: java-fsb-sql-injection
+      expect_category: "SQL injection (JDBC) in UserServlet.doGet"
+      verified: false
+    - id: java-fsb-xss
+      expect_category: "cross-site scripting in a servlet response"
+      verified: false
+    - id: java-fsb-hardcoded-password
+      expect_category: "hard-coded password (DB_PASSWORD passed to DriverManager.getConnection)"
+      verified: false
+  sonarqube: []          # fill after spike S3

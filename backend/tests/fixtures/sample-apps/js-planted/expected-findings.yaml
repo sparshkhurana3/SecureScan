@@ -1,10 +1,29 @@
-# Skeleton. Fill in during M1 (spike S7) after the first real runs, then keep current.
-# Each tool lists rule ids or titles that must appear in its report for this app.
+# Expected findings for js-planted. Format: scanners/regression/README.md.
+# Every entry below states a weakness that is planted in the code (line numbers read from the files on 2026-10-07).
+# Whether a given tool reports it is NOT verified yet: `verified: false` until the first real run (spike S7) confirms it.
+# Categories are free text on purpose; rule ids are added after a real run, never guessed.
 app: js-planted
+schema_version: 1
 tools:
-  semgrep: []
-  gitleaks: []
-  grype: []
-  dependency-check: []
-  spotbugs: []
-  sonarqube: []
+  semgrep:
+    - id: js-eval-request-input
+      expect_category: "code injection: eval() on request input"
+      file: server.js
+      line: 12
+      verified: false
+    - id: js-command-injection
+      expect_category: "command injection: child_process.exec with a string built from request input"
+      file: server.js
+      line: 17
+      verified: false
+  gitleaks:
+    - id: js-hardcoded-token
+      expect_category: "hard-coded secret / generic API key assigned to API_TOKEN"
+      file: server.js
+      line: 8
+      verified: false
+      note: "Planted secret is certain; detection by the default Gitleaks rules depends on keyword and entropy rules."
+  grype: []              # package.json has no lock file here: Syft may catalogue nothing. Fill after the first S7 run.
+  dependency-check: []   # same reason; fill after the first S7 run.
+  spotbugs: []           # not applicable: no Java classes
+  sonarqube: []          # fill after spike S3 (issue versus security hotspot classification is not known yet)
