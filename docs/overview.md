@@ -2,7 +2,7 @@
 
 SecureScan is an on-premises platform that scans your applications and your vendors' applications for security weaknesses, keeps a permanent record of every scan, and produces SonaComstar-branded reports. It runs on one Ubuntu 24 machine under Docker Compose and signs users in with Microsoft Entra ID.
 
-> **Status (7 October 2026).** The design is complete and the build plan is written (`docs/implementation-plan.md`). Only milestone M0, the repository scaffold, exists so far, and it has not yet been run. Everything under "Features" describes what the finished platform will do, not what you can use today. Progress is tracked in `docs/progress.md`.
+> **Status (8 October 2026).** Milestones M0 to M11 are written: backend, portal, scanner catalogue, deployment files, runbooks and tests. None of it has been run yet; it is verified on Ubuntu 24 milestone by milestone (`docs/progress.md`). The M1 spikes, which confirm scanner flags and DefectDojo, SonarQube, Entra and GitHub behaviour, must run first.
 
 ## What it does
 
@@ -73,7 +73,7 @@ python3 scripts/dev.py pull-images
 python3 scripts/dev.py up
 ```
 
-Then open `https://<portal host>/`. First-time setup of DefectDojo and SonarQube is automatic. Backups, upgrades, restores and the other routines will be documented in `docs/install.md` and `docs/runbooks/` in milestone M11.
+Then open `https://<portal host>/`. First-time setup of DefectDojo and SonarQube is automatic. The production installation is `docs/install.md`; backups (`scripts/backup.sh`), the restore drill, upgrades, key rotation and the other routines are the runbooks in `docs/runbooks/`; the security controls and how to check them are `docs/security-checklist.md`.
 
 ## Where to read more
 
