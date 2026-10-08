@@ -1,0 +1,24 @@
+# Optional second compose file for S3: use the real PostgreSQL container of the M0 stack (TLS on) instead of s3-db.
+# Prerequisites: the main stack is up (`python scripts/dev.py up`), the `sonarqube` database and role exist
+# (deploy/postgres/init/01-databases.sh), and `python scripts/dev.py certs` has produced deploy/secrets/tls/ca.crt.
+#
+#   export S3_DB_PASSWORD="$(cat deploy/secrets/sonarqube_db_password)"
+#   export S3_JDBC_URL='jdbc:postgresql://db:5432/sonarqube?ssl=true&sslmode=verify-full&sslrootcert=/run/secrets/tls_ca'
+#   export S3_COMPOSE_FILES='-f spikes/s3/docker-compose.yml -f spikes/s3/docker-compose.tls.yml'
+#   uv run --project backend python spikes/s3/run.py
+#
+# The role name must match `sonarqube` in deploy/postgres/init/01-databases.sh (verify there). The server certificate must
+# contain the SAN `db` (dev.py certs does). The CA file is mounted into the container and referenced by sslrootcert.
+services:
+  sonarqube:
+    volumes:
+      - ../../deploy/secrets/tls/ca.crt:/run/secrets/tls_ca:ro
+    networks:
+      s3_backend: {}
+      s3_sonarqube: {}
+      securescan_backend:
+        aliases: []
+networks:
+  securescan_backend:
+    external: true
+    name: securescan_backend

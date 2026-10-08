@@ -1,0 +1,63 @@
+# Spike S3: SonarQube Community Build on demand (shape of the future catalogue entry `sonarqube-server`).
+# Driven by spikes/s3/run.py; the script starts and stops the stack and times it. Manual use:
+#   docker compose -f spikes/s3/docker-compose.yml up -d
+#
+# Differences from the real stack, deliberate for the spike:
+#   - its own PostgreSQL 18 container `s3-db` (no TLS) so the spike needs nothing else running. To test the TLS
+#     connection string of the plan (`ssl=true&sslmode=verify-full&sslrootcert=...`) against the real `db` container use
+#     docker-compose.tls.yml as a second -f file (see its header).
+#   - the host can reach SonarQube on 127.0.0.1:9000 through the `s3_backend` network; the scanner container reaches it
+#     only through the `internal: true` network `s3_sonarqube`, like the production `sonarqube` network.
+#
+# Host prerequisites (the script checks the first): vm.max_map_count >= 524288 (sysctl -w vm.max_map_count=524288),
+# fs.file-max >= 131072, 4 GB of free RAM.
+name: securescan-spike-s3
+
+services:
+  s3-db:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: sonarqube
+      POSTGRES_PASSWORD: ${S3_DB_PASSWORD:-sonarqube-spike-db}
+      POSTGRES_DB: sonarqube
+    volumes:
+      - s3_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [s3_backend]
+
+  sonarqube:
+    image: ${S3_SONARQUBE_IMAGE:-sonarqube:26.9.0.129388-community}
+    container_name: sonarqube
+    depends_on:
+      s3-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: ${S3_JDBC_URL:-jdbc:postgresql://s3-db:5432/sonarqube}
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: ${S3_DB_PASSWORD:-sonarqube-spike-db}
+    ulimits:
+      nofile: { soft: 131072, hard: 131072 }
+      nproc: { soft: 8192, hard: 8192 }
+    stop_grace_period: 300s
+    volumes:
+      - s3_sonarqube_data:/opt/sonarqube/data
+      - s3_sonarqube_extensions:/opt/sonarqube/extensions
+      - s3_sonarqube_logs:/opt/sonarqube/logs
+    ports:
+      - "127.0.0.1:9000:9000"
+    networks: [s3_backend, s3_sonarqube]
+
+networks:
+  s3_backend: {}
+  s3_sonarqube:
+    internal: true
+
+volumes:
+  s3_pgdata: {}
+  s3_sonarqube_data: {}
+  s3_sonarqube_extensions: {}
+  s3_sonarqube_logs: {}

@@ -1,0 +1,56 @@
+# Spike S2: wollomatic/socket-proxy allowlist for the Docker SDK calls the worker makes.
+# Driven by spikes/s2/run.sh; do not run by hand unless you know the variables below.
+#
+#   S2_ENV_FILE   env file for the proxy: ./discover.env (allow everything, DEBUG log) or ./.data/enforce.env
+#                 (written by derive_paths.py)
+#   DOCKER_GID    group id of /var/run/docker.sock on the host (run.sh sets it)
+#   HOST_UID/GID  the client runs as the host user so files it writes under ./.data belong to you
+name: securescan-spike-s2
+
+services:
+  socket-proxy:
+    image: wollomatic/socket-proxy:${SOCKET_PROXY_VERSION:-1.13.1}
+    # The image is `FROM scratch`: it needs a numeric user that may read the Docker socket (root:docker 0660).
+    user: "65534:${DOCKER_GID:?run through spikes/s2/run.sh}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64M
+    env_file: ${S2_ENV_FILE:-./discover.env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [proxy]
+
+  # Plays the worker: the Docker SDK for Python talks to tcp://socket-proxy:2375.
+  client:
+    image: python:3.14-slim-trixie
+    command: ["sleep", "infinity"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+      HOME: /tmp
+      PYTHONUSERBASE: /tmp/pyuser
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONUNBUFFERED: "1"
+      S2_IMAGE: ${S2_IMAGE:-busybox:1.37}
+      S2_SONAR_NAME: ${S2_SONAR_NAME:-sonarqube}
+    volumes:
+      - ./:/spike
+    networks: [proxy, internet]
+
+  # A container that is NOT in the proxy's -allowfrom list; it must be refused.
+  intruder:
+    image: python:3.14-slim-trixie
+    command: ["sleep", "infinity"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      HOME: /tmp
+    volumes:
+      - ./:/spike:ro
+    networks: [proxy]
+
+networks:
+  # Private network between the proxy and its clients, as the proxy README recommends.
+  proxy:
+    internal: true
+  internet: {}

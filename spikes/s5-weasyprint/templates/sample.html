@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SecureScan sample report</title>
+<!-- A local stylesheet next to this file: the restricted url_fetcher must ALLOW it. -->
+<link rel="stylesheet" href="extra.css">
+<style>
+  @page {
+    size: A4;
+    margin: 22mm 18mm 24mm 18mm;
+    @top-left { content: "SonaComstar - SecureScan sample report"; font-size: 8pt; color: #555; }
+    @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #555; }
+  }
+  html { font-family: "Liberation Sans", Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; }
+  h1 { font-size: 20pt; margin: 8mm 0 3mm; }
+  h2 { font-size: 13pt; margin: 8mm 0 2mm; border-bottom: 0.4pt solid #888; padding-bottom: 1mm; }
+  .logo { height: 9mm; }
+  .meta { color: #444; margin-bottom: 6mm; }
+  table { border-collapse: collapse; width: 100%; margin-top: 3mm; }
+  th, td { border: 0.4pt solid #999; padding: 1.6mm 2mm; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  /* Colour appears only for severity, always with the text label. */
+  .badge { display: inline-block; padding: 0.4mm 2mm; border-radius: 1.2mm; font-weight: 700; font-size: 8.5pt; color: #fff; }
+  .critical { background: #7f1d1d; } .high { background: #b91c1c; } .medium { background: #b45309; }
+  .low { background: #1d4ed8; } .info { background: #4b5563; }
+  .pagebreak { break-before: page; }
+  .small { font-size: 8.5pt; color: #444; }
+  .dot { width: 3mm; height: 3mm; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <img class="logo" alt="SonaComstar" src="{{WORDMARK_DATA_URI}}">
+  <h1>Application security report (sample)</h1>
+  <p class="meta">Application: planted-demo &middot; Version 1.0.0 &middot; Scan date 2026-10-07 &middot; Profile code-standard v4</p>
+
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Severity</th><th>Active findings</th><th>Closed since last scan</th></tr>
+    <tr><td><span class="badge critical">Critical</span></td><td>1</td><td>0</td></tr>
+    <tr><td><span class="badge high">High</span></td><td>4</td><td>1</td></tr>
+    <tr><td><span class="badge medium">Medium</span></td><td>7</td><td>2</td></tr>
+    <tr><td><span class="badge low">Low</span></td><td>3</td><td>0</td></tr>
+    <tr><td><span class="badge info">Info</span></td><td>12</td><td>4</td></tr>
+  </table>
+  <p class="small">This image is a local file next to the template and must load: <img class="dot" alt="local image" src="dot.svg"></p>
+
+  <h2>Findings</h2>
+  <table>
+    <tr><th>#</th><th>Severity</th><th>Title</th><th>Location</th><th>Tool</th></tr>
+    <tr><td>1</td><td><span class="badge critical">Critical</span></td><td>Log4Shell in log4j-core 2.14.1 (CVE-2021-44228)</td><td>pom.xml</td><td>Grype</td></tr>
+    <tr><td>2</td><td><span class="badge high">High</span></td><td>SQL injection by string concatenation</td><td>UserServlet.java:23</td><td>Semgrep</td></tr>
+    <tr><td>3</td><td><span class="badge high">High</span></td><td>Command built from request input</td><td>server.js:16</td><td>Semgrep</td></tr>
+    <tr><td>4</td><td><span class="badge medium">Medium</span></td><td>Hard-coded credential</td><td>UserServlet.java:15</td><td>Gitleaks</td></tr>
+    <tr><td>5</td><td><span class="badge low">Low</span></td><td>Cookie without the Secure flag</td><td>/login</td><td>ZAP</td></tr>
+    <tr><td>6</td><td><span class="badge info">Info</span></td><td>Server version disclosed in header</td><td>/</td><td>Nuclei</td></tr>
+  </table>
+
+  <div class="pagebreak"></div>
+  <h2>Known limits of this report</h2>
+  <p>Semgrep Community Edition traces taint only within one function. SonarQube Community Build has no taint analysis.
+     Dependency-Check identifies components by fuzzy matching and produces false positives and false negatives.</p>
+  <p>Non-ASCII text for the font check: caf&eacute;, na&iuml;ve, &Uuml;ber, &#8364;100, &#8220;quotes&#8221;, &#8211; dash, &rarr; arrow.</p>
+  <h2>Method</h2>
+  <ol>
+    <li>Source acquired at a pinned commit.</li>
+    <li>Independent tools run in isolated containers without network.</li>
+    <li>Raw reports imported into DefectDojo; findings read back for this report.</li>
+  </ol>
+  <h2>Sign-off</h2>
+  <table>
+    <tr><th>Role</th><th>Name</th><th>Date</th></tr>
+    <tr><td>Analyst</td><td>Test User</td><td>2026-10-07</td></tr>
+    <tr><td>Reviewer</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  </table>
+</body>
+</html>

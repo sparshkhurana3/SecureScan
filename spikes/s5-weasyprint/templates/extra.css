@@ -1,0 +1,2 @@
+/* Local stylesheet loaded by sample.html through <link>; proves that file: URLs inside the template directory work. */
+.small { letter-spacing: 0.1pt; }

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hostile template (must render without fetching any of its resources)</title>
+<!-- Every resource below must be refused by the restricted url_fetcher. -->
+<link rel="stylesheet" href="http://example.invalid/evil.css">
+<link rel="stylesheet" href="file:///etc/hostname">
+<style>
+  @import url("http://example.invalid/import.css");
+  body { font-family: "Liberation Sans", Arial, sans-serif; background: url("http://example.invalid/bg.png"); }
+  .x { background-image: url("file:///etc/passwd"); }
+</style>
+</head>
+<body>
+  <h1>Hostile template</h1>
+  <img alt="remote" src="http://example.invalid/remote.png">
+  <img alt="https remote" src="https://example.invalid/remote.png">
+  <img alt="etc passwd" src="file:///etc/passwd">
+  <img alt="parent directory" src="../render.py">
+  <img alt="ftp" src="ftp://example.invalid/a.png">
+  <img alt="inside template dir, allowed" src="dot.svg">
+  <div class="x">content</div>
+</body>
+</html>

@@ -1,0 +1,150 @@
+# Spike S1: DefectDojo 3.4.0, shaped after the upstream docker-compose.yml at tag 3.4.0
+# (https://github.com/DefectDojo/django-DefectDojo/blob/3.4.0/docker-compose.yml, fetched 2026-10-07).
+#
+# Differences from upstream, all deliberate:
+#   - DD_IMAGE_REGISTRY defaults to docker.io (upstream defaults to registry.defectdojo.com, which logs every pull).
+#   - NGINX_VERSION and DJANGO_VERSION default to 3.4.0 instead of "latest".
+#   - the `build:` sections are removed (images are pulled, never built here).
+#   - DD_ADMIN_PASSWORD is passed to the initializer (upstream does not pass it; without it the initializer
+#     generates a random password and prints it to its log).
+#   - upstream's `DD_ADMIN_MAIL: ${DD_ADMIN_USER:-...}` looks like a typo; here it reads DD_ADMIN_MAIL.
+#   - ports are published on 127.0.0.1 only.
+#   - the project name is fixed so the spike never collides with the real stack (`securescan`).
+#
+# Never use this file for the real deployment; M4 writes the production definition into deploy/compose.yaml.
+#
+# Usage (from the repository root):
+#   mkdir -p spikes/s1/.data && cp spikes/s1/s1.env.example spikes/s1/.data/s1.env   # then edit the password
+#   docker compose --project-directory spikes/s1 --env-file spikes/s1/.data/s1.env -f spikes/s1/docker-compose.yml up -d
+#   docker compose --project-directory spikes/s1 --env-file spikes/s1/.data/s1.env -f spikes/s1/docker-compose.yml logs -f initializer
+name: securescan-spike-s1
+
+services:
+  nginx:
+    image: "${DD_IMAGE_REGISTRY:-docker.io}/defectdojo/defectdojo-nginx:${NGINX_VERSION:-3.4.0}"
+    depends_on:
+      uwsgi:
+        condition: service_started
+    environment:
+      NGINX_METRICS_ENABLED: "${NGINX_METRICS_ENABLED:-false}"
+      DD_UWSGI_HOST: "${DD_UWSGI_HOST:-uwsgi}"
+      DD_UWSGI_PORT: "${DD_UWSGI_PORT:-3031}"
+    volumes:
+      - defectdojo_media:/usr/share/nginx/html/media
+    ports:
+      - "127.0.0.1:${DD_PORT:-8080}:8080"
+      - "127.0.0.1:${DD_TLS_PORT:-8443}:8443"
+
+  uwsgi:
+    image: "${DD_IMAGE_REGISTRY:-docker.io}/defectdojo/defectdojo-django:${DJANGO_VERSION:-3.4.0}"
+    depends_on:
+      initializer:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_started
+      valkey:
+        condition: service_started
+    entrypoint: ['/wait-for-it.sh', '${DD_DATABASE_HOST:-postgres}:${DD_DATABASE_PORT:-5432}', '-t', '30', '--', '/entrypoint-uwsgi.sh']
+    environment:
+      DD_DEBUG: 'False'
+      DD_DJANGO_METRICS_ENABLED: "${DD_DJANGO_METRICS_ENABLED:-False}"
+      DD_ALLOWED_HOSTS: "${DD_ALLOWED_HOSTS:-*}"
+      DD_DATABASE_URL: ${DD_DATABASE_URL:-postgresql://defectdojo:defectdojo@postgres:5432/defectdojo}
+      DD_CELERY_BROKER_URL: ${DD_CELERY_BROKER_URL:-redis://valkey:6379/0}
+      DD_CACHE_URL: ${DD_CACHE_URL:-redis://valkey:6379/1}
+      DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
+      DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
+      DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
+    volumes:
+      - type: bind
+        source: ./docker/extra_settings
+        target: /app/docker/extra_settings
+      - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
+
+  celerybeat:
+    image: "${DD_IMAGE_REGISTRY:-docker.io}/defectdojo/defectdojo-django:${DJANGO_VERSION:-3.4.0}"
+    depends_on:
+      initializer:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_started
+      valkey:
+        condition: service_started
+    entrypoint: ['/wait-for-it.sh', '${DD_DATABASE_HOST:-postgres}:${DD_DATABASE_PORT:-5432}', '-t', '30', '--', '/entrypoint-celery-beat.sh']
+    environment:
+      DD_DATABASE_URL: ${DD_DATABASE_URL:-postgresql://defectdojo:defectdojo@postgres:5432/defectdojo}
+      DD_CELERY_BROKER_URL: ${DD_CELERY_BROKER_URL:-redis://valkey:6379/0}
+      DD_CACHE_URL: ${DD_CACHE_URL:-redis://valkey:6379/1}
+      DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
+      DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
+      DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
+    volumes:
+      - type: bind
+        source: ./docker/extra_settings
+        target: /app/docker/extra_settings
+
+  celeryworker:
+    image: "${DD_IMAGE_REGISTRY:-docker.io}/defectdojo/defectdojo-django:${DJANGO_VERSION:-3.4.0}"
+    depends_on:
+      initializer:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_started
+      valkey:
+        condition: service_started
+    entrypoint: ['/wait-for-it.sh', '${DD_DATABASE_HOST:-postgres}:${DD_DATABASE_PORT:-5432}', '-t', '30', '--', '/entrypoint-celery-worker.sh']
+    environment:
+      DD_DATABASE_URL: ${DD_DATABASE_URL:-postgresql://defectdojo:defectdojo@postgres:5432/defectdojo}
+      DD_CELERY_BROKER_URL: ${DD_CELERY_BROKER_URL:-redis://valkey:6379/0}
+      DD_CACHE_URL: ${DD_CACHE_URL:-redis://valkey:6379/1}
+      DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
+      DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
+      DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
+    volumes:
+      - type: bind
+        source: ./docker/extra_settings
+        target: /app/docker/extra_settings
+      - "defectdojo_media:${DD_MEDIA_ROOT:-/app/media}"
+
+  initializer:
+    image: "${DD_IMAGE_REGISTRY:-docker.io}/defectdojo/defectdojo-django:${DJANGO_VERSION:-3.4.0}"
+    depends_on:
+      postgres:
+        condition: service_started
+    entrypoint: ['/wait-for-it.sh', '${DD_DATABASE_HOST:-postgres}:${DD_DATABASE_PORT:-5432}', '--', '/entrypoint-initializer.sh']
+    environment:
+      DD_DATABASE_URL: ${DD_DATABASE_URL:-postgresql://defectdojo:defectdojo@postgres:5432/defectdojo}
+      DD_ADMIN_USER: "${DD_ADMIN_USER:-admin}"
+      DD_ADMIN_PASSWORD: "${DD_ADMIN_PASSWORD:?set DD_ADMIN_PASSWORD in spikes/s1/.data/s1.env}"
+      DD_ADMIN_MAIL: "${DD_ADMIN_MAIL:-admin@defectdojo.local}"
+      DD_ADMIN_FIRST_NAME: "${DD_ADMIN_FIRST_NAME:-Admin}"
+      DD_ADMIN_LAST_NAME: "${DD_ADMIN_LAST_NAME:-User}"
+      DD_INITIALIZE: "${DD_INITIALIZE:-true}"
+      DD_SECRET_KEY: "${DD_SECRET_KEY:-hhZCp@D28z!n@NED*yB!ROMt+WzsY*iq}"
+      DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-&91a*agLqesc*0DJ+2*bAbsUZfR*4nLw}"
+      DD_DATABASE_READINESS_TIMEOUT: "${DD_DATABASE_READINESS_TIMEOUT:-30}"
+    volumes:
+      - type: bind
+        source: ./docker/extra_settings
+        target: /app/docker/extra_settings
+
+  postgres:
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: ${DD_DATABASE_NAME:-defectdojo}
+      POSTGRES_USER: ${DD_DATABASE_USER:-defectdojo}
+      POSTGRES_PASSWORD: ${DD_DATABASE_PASSWORD:-defectdojo}
+    volumes:
+      - defectdojo_postgres:/var/lib/postgresql/data
+
+  valkey:
+    image: valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    volumes:
+      # upstream keeps the old "redis" volume name; kept for fidelity
+      - defectdojo_redis:/data
+
+volumes:
+  defectdojo_postgres: {}
+  defectdojo_media: {}
+  defectdojo_redis: {}

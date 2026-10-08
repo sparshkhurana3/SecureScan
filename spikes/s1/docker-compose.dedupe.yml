@@ -1,0 +1,20 @@
+# Optional override for S1 step 10: experiment with DD_HASHCODE_FIELDS_PER_SCANNER and the algorithm per parser.
+# Per the research notes the variables must be set on uwsgi, celerybeat and celeryworker (not on nginx).
+# Changes are not retroactive: after changing them run, inside the uwsgi container,
+#   python manage.py dedupe --parser 'Semgrep JSON Report' --dedupe_sync
+# Usage:
+#   docker compose --project-directory spikes/s1 --env-file spikes/s1/.data/s1.env \
+#     -f spikes/s1/docker-compose.yml -f spikes/s1/docker-compose.dedupe.yml up -d
+# Edit the JSON below; allowed hash fields: title, cwe, cwes, vulnerability_ids, line, file_path, payload,
+# component_name, component_version, description, endpoints, unique_id_from_tool, severity, vuln_id_from_tool, mitigation.
+x-dedupe-env: &dedupe-env
+  DD_HASHCODE_FIELDS_PER_SCANNER: '{"Semgrep JSON Report": ["title", "cwe", "file_path", "description"]}'
+  DD_DEDUPLICATION_ALGORITHM_PER_PARSER: '{"Semgrep JSON Report": "hash_code"}'
+
+services:
+  uwsgi:
+    environment: *dedupe-env
+  celerybeat:
+    environment: *dedupe-env
+  celeryworker:
+    environment: *dedupe-env
