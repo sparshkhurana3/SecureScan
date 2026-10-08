@@ -1,14 +1,83 @@
 @import "tailwindcss";
 
-/* Monochrome SonaComstar theme. Colour is reserved for severity and scan status badges. */
+/*
+ * SonaComstar theme: black, white and greys. Colour is reserved for severity and scan-status badges,
+ * which always carry a text label. Every colour pair below meets WCAG 2.1 AA (4.5:1) for its text size.
+ */
 :root {
   --background: #ffffff;
   --foreground: #0a0a0a;
   --muted: #f4f4f4;
-  --muted-foreground: #5c5c5c;
-  --border: #d9d9d9;
+  --muted-foreground: #525252;
+  --border: #d4d4d4;
+  --input: #737373;
   --accent: #0a0a0a;
   --accent-foreground: #ffffff;
+  --ring: #0a0a0a;
+  --destructive: #0a0a0a;
+
+  /* Severity badges (background / text). */
+  --sev-critical-bg: #991b1b;
+  --sev-critical-fg: #ffffff;
+  --sev-high-bg: #c2410c;
+  --sev-high-fg: #ffffff;
+  --sev-medium-bg: #fde68a;
+  --sev-medium-fg: #422006;
+  --sev-low-bg: #dbeafe;
+  --sev-low-fg: #1e3a8a;
+  --sev-info-bg: #e5e5e5;
+  --sev-info-fg: #262626;
+
+  /* Scan, job, import and verdict status badges. */
+  --status-neutral-bg: #e5e5e5;
+  --status-neutral-fg: #262626;
+  --status-active-bg: #dbeafe;
+  --status-active-fg: #1e3a8a;
+  --status-ok-bg: #dcfce7;
+  --status-ok-fg: #14532d;
+  --status-warn-bg: #fde68a;
+  --status-warn-fg: #422006;
+  --status-bad-bg: #fee2e2;
+  --status-bad-fg: #7f1d1d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+
+  --color-sev-critical-bg: var(--sev-critical-bg);
+  --color-sev-critical-fg: var(--sev-critical-fg);
+  --color-sev-high-bg: var(--sev-high-bg);
+  --color-sev-high-fg: var(--sev-high-fg);
+  --color-sev-medium-bg: var(--sev-medium-bg);
+  --color-sev-medium-fg: var(--sev-medium-fg);
+  --color-sev-low-bg: var(--sev-low-bg);
+  --color-sev-low-fg: var(--sev-low-fg);
+  --color-sev-info-bg: var(--sev-info-bg);
+  --color-sev-info-fg: var(--sev-info-fg);
+
+  --color-status-neutral-bg: var(--status-neutral-bg);
+  --color-status-neutral-fg: var(--status-neutral-fg);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-active-fg: var(--status-active-fg);
+  --color-status-ok-bg: var(--status-ok-bg);
+  --color-status-ok-fg: var(--status-ok-fg);
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-warn-fg: var(--status-warn-fg);
+  --color-status-bad-bg: var(--status-bad-bg);
+  --color-status-bad-fg: var(--status-bad-fg);
+
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 html,
@@ -21,5 +90,21 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A clearly visible keyboard focus ring everywhere. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
