@@ -1,0 +1,22 @@
+# Optional external regression target: OWASP Juice Shop (clone with `python scripts/dev.py fetch-fixtures`, then copy or
+# mount fixtures/external/juice-shop into the fixtures directory of the worker; see README.md).
+# Juice Shop is a deliberately vulnerable application, so these weaknesses are certain from its documentation.
+# Nothing here is verified yet: `verified: false` until a real run produced a matching finding. Format: README.md.
+app: juice-shop
+schema_version: 1
+tools:
+  semgrep:
+    - id: js-login-sql-injection
+      expect_category: "SQL injection: login query built by string concatenation with request input"
+      verified: false
+      note: "routes/login.ts builds the SELECT on Users from req.body.email."
+    - id: js-search-sql-injection
+      expect_category: "SQL injection: product search query built by string concatenation with request input"
+      verified: false
+      note: "routes/search.ts builds the LIKE query from the search criteria."
+  gitleaks:
+    - id: js-hardcoded-private-key
+      expect_category: "hard-coded private key"
+      verified: false
+      note: "lib/insecurity.ts holds an RSA private key in source."
+  nuclei: []   # DAST regression against a running UAT instance: fill after the first real run

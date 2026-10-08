@@ -1,0 +1,60 @@
+# Nuclei for UAT web targets only (plan M9 task 4). Same network, proxy and lock rules as ZAP.
+# Templates come from the content volume: the builder mounts the resolved dated directory behind the
+# `nuclei-templates` symlink at /content/nuclei-templates (read-only). The rate (-rl), concurrency (-c) and the
+# proxy (-proxy) are added by the builder from the target's rate limit and the job's squid, through optional_args.
+# Deviation from the plan text: NUCLEI_CONFIG_DIR points into a tmpfs, because only `out` may be writable.
+schema_version: 1
+scanners:
+  - tool: nuclei
+    description: Nuclei templates against a UAT web target (no update check, no interactsh, no unsafe tags)
+    image: {name: projectdiscovery/nuclei, tag: v3.11.1, lock: NUCLEI}
+    user: "1000:1000"
+    network: dast
+    entrypoint: [""]            # the command below is the whole argv (unverified: nuclei is on PATH in the image)
+    mounts:
+      - {name: out, target: /out, read_only: false}
+      - {name: config, target: /config, read_only: true}                    # resolvers.txt
+      - {name: content, target: /content/nuclei-templates, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 256m}
+    limits: {cpus: 2, memory: 2g, pids: 256}
+    timeout_minutes: 120
+    max_parallel: 1
+    lock: dast
+    env:
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+      NUCLEI_CONFIG_DIR: /tmp/nuclei-config
+    command:
+      - nuclei
+      - -u
+      - "{target_url}"
+      - -duc
+      - -ni
+      - -dut
+      - -nc
+      - -ud
+      - "{content}"
+      - -etags
+      - dos,fuzz,bruteforce,local,txt-service,intrusive
+      - -severity
+      - low,medium,high,critical
+      - -r
+      - "{config}/resolvers.txt"
+      - -rd
+      - Authorization,Cookie
+      - -json-export
+      - "{out}/nuclei.json"
+    optional_args:
+      - {flag: -proxy, value: pattern, max_length: 300}
+      - {flag: -rl, value: int}
+      - {flag: -c, value: int}
+    outputs:
+      - {file: nuclei.json, max_mb: 200, format: json, required: true}
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: [url]
+    defectdojo_scan_type: Nuclei Scan
+    defectdojo_file: nuclei.json

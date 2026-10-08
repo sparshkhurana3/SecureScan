@@ -1,0 +1,116 @@
+# The scanner catalogue: the only source of container specifications (plan 1.2 and M3 task 1).
+# Validated by backend/securescan/runner/catalogue.py. Files in catalogue.d/*.yaml are merged in
+# (later milestones add their tools there or here; a tool defined twice is an error).
+#
+# Image pinning: the digest is NOT written here. `python scripts/dev.py pin-images` resolves the tags of
+# deploy/images.lock.yaml, Compose passes IMG_<lock> to the worker as SECURESCAN_IMAGE_<lock>, and an
+# approved ImageVersion row overrides both. `latest` is refused.
+#
+# Everything below that says "unverified" is a value written from the plan and the spike scripts and is
+# confirmed (or corrected) by spike S7 on Ubuntu 24: docs/spikes/s7-scanner-contract.md.
+schema_version: 1
+scanners:
+  - tool: semgrep
+    description: Semgrep Community Edition with the pinned rule bundle (no network, no metrics)
+    image: {name: semgrep/semgrep, tag: 1.179.0-nonroot, lock: SEMGREP}
+    user: "1000:1000"
+    network: none
+    entrypoint: [""]          # the command below is the whole argv (S7 confirms the image entrypoint)
+    mounts:
+      - {name: src, target: /src, read_only: true}
+      - {name: out, target: /out, read_only: false}
+      - {name: content, target: /content/semgrep/rules, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 2, memory: 4g, pids: 256}
+    timeout_minutes: 60
+    max_parallel: 2
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      SEMGREP_ENABLE_VERSION_CHECK: "0"
+      SEMGREP_SEND_METRICS: "off"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /src
+    command:
+      - semgrep
+      - scan
+      - --config
+      - "{content}"
+      - --metrics=off
+      - --disable-version-check
+      - "--json-output={out}/semgrep.json"
+      - "--sarif-output={out}/semgrep.sarif"
+      - --timeout
+      - "30"
+      - --timeout-threshold
+      - "3"
+      - --max-memory
+      - "3000"
+      - --jobs
+      - "2"
+      - "{src}"
+    optional_args:
+      - {flag: --exclude, value: pattern, repeatable: true, max_count: 200, max_length: 200}
+    outputs:
+      - {file: semgrep.json, max_mb: 90, format: json, required: true}
+      - {file: semgrep.sarif, max_mb: 150, format: json, required: false}
+    exit_codes:
+      "0": completed
+      "1": completed          # findings with --error; the command does not pass --error, so unexpected
+      ">=2": failed
+      default: failed
+    target_kinds: [github_repo, vendor_repo, zip, image]
+    defectdojo_scan_type: Semgrep JSON Report
+    defectdojo_file: semgrep.json
+
+  - tool: gitleaks
+    description: Gitleaks over the full git history (repositories) or the files (zip, image filesystem)
+    image: {name: ghcr.io/gitleaks/gitleaks, tag: v8.30.1, lock: GITLEAKS}
+    user: "1000:1000"         # S7 decides between this and root; with all capabilities dropped root loses DAC override
+    network: none
+    entrypoint: [""]
+    mounts:
+      - {name: src, target: /src, read_only: true}
+      - {name: out, target: /out, read_only: false}
+      - {name: config, target: /config, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 128m}
+    limits: {cpus: 1, memory: 1g, pids: 128}
+    timeout_minutes: 20
+    max_parallel: 2
+    env:
+      HOME: /tmp
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /src
+    # This is the repository form. For zips and image filesystems the builder replaces "git" by "dir"
+    # (same flags, plan M3 task 1).
+    command:
+      - gitleaks
+      - git
+      - "{src}"
+      - --redact
+      - --config
+      - "{config}/gitleaks.toml"
+      - --ignore-gitleaks-allow
+      - --max-archive-depth
+      - "2"
+      - --report-format
+      - json
+      - --report-path
+      - "{out}/gitleaks.json"
+      - --exit-code
+      - "2"
+    outputs:
+      - {file: gitleaks.json, max_mb: 200, format: json, required: true}
+    exit_codes:
+      "0": completed
+      "2": completed          # leaks found (--exit-code 2): the tool ran
+      "1": failed
+      "126": failed
+      default: failed
+    target_kinds: [github_repo, vendor_repo, zip, image]
+    defectdojo_scan_type: Gitleaks Scan
+    defectdojo_file: gitleaks.json

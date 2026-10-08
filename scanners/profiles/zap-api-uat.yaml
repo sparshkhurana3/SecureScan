@@ -1,0 +1,40 @@
+# ZAP Automation Framework plan template: API scan of a UAT target (plan M9 task 3). Not a scan profile.
+# The import job imports the API definition (openapi, graphql or soap; the renderer picks the job type and
+# its parameters from the target's api_spec_type and locator), then the active scan attacks what was imported.
+template: zap-api-uat
+mode: api
+description: API definition import (OpenAPI, GraphQL or SOAP) followed by an active scan of a UAT target.
+jobs:
+  - $include: login
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+      scanOnlyInScope: true
+  - type: "{{api_job_type}}"
+    parameters: "{{api_parameters}}"
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: activeScan
+    parameters:
+      context: "{{context}}"
+      user: "{{user}}"
+      maxScanDurationInMins: "{{active_minutes}}"
+      maxRuleDurationInMins: 15
+      threadPerHost: "{{active_threads}}"
+      delayInMs: "{{active_delay_ms}}"
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: report
+    parameters:
+      template: traditional-xml-plus
+      reportDir: /zap/wrk
+      reportFile: zap
+      reportTitle: "{{report_title}}"
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk
+      reportFile: zap-report
+      reportTitle: "{{report_title}}"

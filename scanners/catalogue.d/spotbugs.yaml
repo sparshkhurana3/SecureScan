@@ -1,0 +1,43 @@
+# SpotBugs with Find Security Bugs (plan M8 task 4). The image is built from scanners/spotbugs/Dockerfile and
+# kept in the local registry; its digest is SECURESCAN_IMAGE_SPOTBUGS_FSB (deploy/images.lock.yaml, SPOTBUGS_FSB).
+# The builder discovers the JAR, WAR, EAR files and class directories under /src and appends them after the
+# options below; there is no -exitcode, so findings never change the exit code.
+# Unverified until S7: that "-xml:withMessages=<file>" is accepted (else "-xml:withMessages -output <file>").
+schema_version: 1
+scanners:
+  - tool: spotbugs
+    description: SpotBugs with Find Security Bugs on compiled Java classes (JARs, WARs, EARs, class directories)
+    image: {name: securescan/spotbugs-fsb, tag: 4.10.4-1.14.0, lock: SPOTBUGS_FSB}
+    user: "1000:1000"
+    network: none
+    entrypoint: null            # the image's ENTRYPOINT is /opt/spotbugs/bin/spotbugs (scanners/spotbugs/Dockerfile)
+    mounts:
+      - {name: src, target: /src, read_only: true}
+      - {name: out, target: /out, read_only: false}
+    tmpfs:
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 2, memory: 3g, pids: 256}
+    timeout_minutes: 30
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      JAVA_TOOL_OPTIONS: "-Djava.io.tmpdir=/tmp"
+    command:
+      - -textui
+      - -pluginList
+      - /opt/findsecbugs/findsecbugs-plugin.jar
+      - "-effort:max"
+      - -low
+      - -maxHeap
+      - "2048"
+      - "-xml:withMessages={out}/spotbugs.xml"
+    optional_args:
+      - {flag: -auxclasspath, value: pattern, max_length: 2000}
+    outputs:
+      - {file: spotbugs.xml, max_mb: 200, format: xml, required: true}
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: [github_repo, vendor_repo, zip, image]
+    defectdojo_scan_type: SpotBugs Scan
+    defectdojo_file: spotbugs.xml

@@ -1,0 +1,8 @@
+# Semgrep settings of SecureScan (not a scan profile: it has `tool:` instead of `profile:`).
+# `exclude` patterns become `--exclude <pattern>` switches (allowlisted in scanners/catalogue.yaml) and are
+# recorded as the job's "applied exclusions" together with Semgrep's built-in skips. Keep the list short:
+# every pattern is a place where nothing is scanned, and reports say so.
+tool: semgrep
+exclude:
+  - "*.min.css"
+  - "*.map"

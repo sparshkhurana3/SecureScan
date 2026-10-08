@@ -1,0 +1,40 @@
+# Syft: the first stage of the `syft-grype` job (plan M8 task 2). It is never a job of its own: the
+# `syft-grype` builder (backend/securescan/runner/tools/syft_grype.py) runs this entry, then the Grype entry
+# (grype.yaml), inside one job. Values marked "unverified" are confirmed by spike S7 on Ubuntu 24.
+schema_version: 1
+scanners:
+  - tool: syft
+    description: Syft software bill of materials of a source tree (dir:) or of an image archive (docker-archive:)
+    image: {name: anchore/syft, tag: v1.54.0, lock: SYFT}
+    user: "1000:1000"
+    network: none
+    entrypoint: null            # the image's own entrypoint is /syft; the command is its arguments (unverified)
+    mounts:
+      - {name: src, target: /src, read_only: true}
+      - {name: out, target: /out, read_only: false}
+      - {name: config, target: /config, read_only: true}   # holds image.tar for image targets
+    tmpfs:
+      - {path: /tmp, size: 3g}      # image scans squash layers here; the builder lowers it for directory scans
+    limits: {cpus: 2, memory: 4g, pids: 256}
+    timeout_minutes: 30
+    max_parallel: 2
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      TMPDIR: /tmp
+      SYFT_CHECK_FOR_APP_UPDATE: "false"
+    # For image targets the builder replaces "dir:/src" by "docker-archive:/config/image.tar" (same flags).
+    command:
+      - scan
+      - "dir:{src}"
+      - "-o"
+      - "syft-json={out}/sbom.syft.json"
+      - "-o"
+      - "cyclonedx-json={out}/sbom.cdx.json"
+    outputs:
+      - {file: sbom.syft.json, max_mb: 500, format: json, required: true}
+      - {file: sbom.cdx.json, max_mb: 500, format: json, required: true}
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []

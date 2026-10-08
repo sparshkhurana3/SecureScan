@@ -1,0 +1,46 @@
+# ZAP (Automation Framework) for web scans: baseline on production, full and API on UAT (plan M9 task 3).
+# The container runs on the `dast` network only and reaches its target through the job's own squid proxy
+# (runner/dast_egress.py); the proxy options are appended by the builder (optional_args `-config`).
+# `lock: dast` serialises all web scans: one DAST job at a time.
+# Values marked "unverified" are written from the plan and ZAP's documentation and are confirmed (or corrected)
+# by the first integration run: docs/build-notes/M9.md lists what to check.
+schema_version: 1
+scanners:
+  - tool: zap
+    description: ZAP Automation Framework plan (baseline passive, full active, API import plus active)
+    image: {name: ghcr.io/zaproxy/zaproxy, tag: stable, lock: ZAP}   # pin by digest only: the tag moves
+    user: "1000:1000"
+    network: dast
+    entrypoint: [""]            # the command below is the whole argv (unverified: zap.sh is on PATH in the image)
+    mounts:
+      - {name: out, target: /zap/wrk, read_only: false}       # reports: zap.xml and zap-report.html
+      - {name: config, target: /zap/config, read_only: true}  # plan.yaml (secrets only as ${ENV} references)
+    tmpfs:
+      - {path: /home/zap, size: 512m}   # ZAP home (HOME below); the root file system is read-only
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 2, memory: 4g, pids: 512}
+    timeout_minutes: 480        # full scans; the baseline profile sets 30 minutes
+    max_parallel: 1
+    lock: dast
+    env:
+      HOME: /home/zap
+      JAVA_OPTS: "-Xmx2g"       # unverified: honoured by zap.sh; otherwise the 4g cgroup limit is the only bound
+    command:
+      - zap.sh
+      - -cmd
+      - -autorun
+      - "{config}/plan.yaml"
+      - -silent
+    optional_args:
+      - {flag: -config, value: pattern, repeatable: true, max_count: 20, max_length: 300}
+    outputs:
+      - {file: zap.xml, max_mb: 200, format: xml, required: true}
+      - {file: zap-report.html, max_mb: 200, format: none, required: false}
+    exit_codes:
+      "0": completed
+      "2": completed            # warnings in the plan: the scan ran
+      "1": completed_partial    # plan errors (the builder turns this into failed for login scans)
+      default: failed
+    target_kinds: [url]
+    defectdojo_scan_type: ZAP Scan
+    defectdojo_file: zap.xml

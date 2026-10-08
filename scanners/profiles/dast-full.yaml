@@ -1,0 +1,15 @@
+# DAST full: ZAP spider, AJAX spider and active scan, then Nuclei. UAT targets only. Seeded by `migrate`.
+profile: dast-full
+version: 1
+kind: dast
+mode: full
+description: ZAP full scan followed by Nuclei. UAT targets only.
+jobs:
+  - tool: zap
+    timeout_min: 480
+    limits: {cpus: 2, memory: 4g}
+  - tool: nuclei
+    timeout_min: 120
+    limits: {cpus: 2, memory: 2g}
+verdict:
+  fail_on: {critical: 1, high: 3}

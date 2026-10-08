@@ -1,0 +1,25 @@
+# ZAP authentication fragment: form-based login (UAT only). Merged into the plan's context by zap.py.
+# {{placeholders}} come from the login profile's settings; a key whose value is None is left out. The secret
+# is never written here or in the plan: ZAP reads ${ZAP_AUTH_USERNAME} and ${ZAP_AUTH_PASSWORD} from the
+# container environment. verification is mandatory (a broken session must not give a clean report).
+authentication:
+  method: form
+  parameters:
+    loginPageUrl: "{{login_page_url}}"
+    loginRequestUrl: "{{login_request_url}}"
+    loginRequestBody: "{{login_request_body}}"
+  verification:
+    method: "{{verification_method}}"
+    loggedInRegex: "{{logged_in_regex}}"
+    loggedOutRegex: "{{logged_out_regex}}"
+    pollUrl: "{{poll_url}}"
+    pollFrequency: "{{poll_frequency}}"
+    pollUnits: "{{poll_units}}"
+    pollPostData: "{{poll_post_data}}"
+sessionManagement:
+  method: cookie
+users:
+  - name: scan-user
+    credentials:
+      username: "${ZAP_AUTH_USERNAME}"
+      password: "${ZAP_AUTH_PASSWORD}"

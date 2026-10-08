@@ -1,0 +1,48 @@
+# Pin and licence filter of the Semgrep rules bundle (plan M8 task 6). Read by the weekly updater
+# (backend/securescan/jobs/updaters.py) from SECURESCAN_SEMGREP_RULES_LOCK_FILE, or from
+# <repository>/content/semgrep-rules.lock next to the scanners directory. The environment variable
+# SECURESCAN_SEMGREP_RULES_COMMIT, when set, wins over `commit`.
+#
+# How to use it:
+#   * Fresh installation: `commit` is empty and `auto` is true, so the first update takes the newest commit of
+#     the repository. The commit is recorded in Settings, Content (content version "rules-<commit>").
+#   * Pinning: copy that commit here, set `auto: false`. From then on the weekly update only re-checks the pinned
+#     commit, and a new rules version needs a reviewed change of this file (or of the environment variable).
+#   * `auto: true` with a commit: the pinned commit is the fallback, the newest commit is fetched weekly.
+#
+# Never invent a commit id: take it from `git ls-remote https://github.com/semgrep/semgrep-rules HEAD` or from
+# the content version shown in Settings.
+repository: https://github.com/semgrep/semgrep-rules
+commit: ""
+auto: true
+
+# Licence filter. A rule file is kept only when every rule in it passes:
+#   * a rule whose metadata.license matches `deny_licenses` (case-insensitive substring) is refused, always;
+#   * a rule whose metadata.license is listed in `allowed_licenses` is accepted;
+#   * a rule without metadata.license follows `missing_license` ("allow": the repository's own licence, the
+#     Semgrep Rules License v1.0, applies; "drop": refuse it);
+#   * any other licence is refused.
+# Add a company-approved licence to `allowed_licenses` only after the legal review. The AGPL-3.0 rules of
+# `trailofbits.*` are excluded by `deny_licenses`.
+allowed_licenses:
+  - Semgrep Rules License v1.0
+deny_licenses:
+  - agpl
+  - gpl-3
+  - gpl-2
+  - lgpl
+  - commons clause
+  - proprietary
+  - unknown
+missing_license: allow
+
+# Directories of the repository that never hold rules (non-rule YAML: statistics, CI definitions, tooling).
+drop_directories:
+  - stats
+  - .github
+  - .git
+  - .circleci
+  - scripts
+  - tests
+  - target
+  - node_modules

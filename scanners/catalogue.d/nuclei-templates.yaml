@@ -1,0 +1,51 @@
+# Nuclei template fetch and structural check, used by the weekly updater (jobs/updaters.py). The scan entry
+# `nuclei` belongs to M9 (nuclei.yaml); the image lock is the same. The fetch writes a dated directory on the
+# content volume; the symlink content/nuclei-templates is switched only after the check passed.
+# Same unverified assumption as nuclei.yaml: `nuclei` is on PATH in the image (the entrypoint is cleared).
+schema_version: 1
+scanners:
+  - tool: nuclei-templates-update
+    description: Fetch the Nuclei templates into a new dated directory (egress to GitHub and pdtm through the proxy)
+    image: {name: projectdiscovery/nuclei, tag: v3.11.1, lock: NUCLEI}
+    user: "1000:1000"
+    network: none               # the updater switches to the egress client network
+    entrypoint: [""]
+    mounts:
+      - {name: out, target: /templates, read_only: false}
+    tmpfs:
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 1, memory: 1g, pids: 256}
+    timeout_minutes: 30
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      NUCLEI_CONFIG_DIR: /tmp/nuclei-config
+      XDG_CONFIG_HOME: /tmp/.config
+    command: [nuclei, -ut, -ud, /templates, -nc]
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []
+
+  - tool: nuclei-templates-validate
+    description: Structural check of a template directory (no network)
+    image: {name: projectdiscovery/nuclei, tag: v3.11.1, lock: NUCLEI}
+    user: "1000:1000"
+    network: none
+    entrypoint: [""]
+    mounts:
+      - {name: content, target: /templates, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 1, memory: 1g, pids: 256}
+    timeout_minutes: 15
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      NUCLEI_CONFIG_DIR: /tmp/nuclei-config
+      XDG_CONFIG_HOME: /tmp/.config
+    command: [nuclei, -validate, -t, /templates, -duc, -ni, -nc]
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []

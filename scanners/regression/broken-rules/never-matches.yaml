@@ -1,0 +1,9 @@
+# A valid Semgrep rule file whose only rule can never match. Used by the "broken rule" drill in README.md: a candidate
+# rules directory that contains this file and none of the real rules must make the suite fail (verified expectations
+# disappear), which is how a silent loss of detection looks.
+rules:
+  - id: securescan-regression-never-matches
+    message: this rule never matches anything
+    severity: INFO
+    languages: [generic]
+    pattern: securescan-regression-this-text-appears-nowhere-7f3a91c2

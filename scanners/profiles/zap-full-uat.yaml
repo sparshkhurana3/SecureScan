@@ -1,0 +1,59 @@
+# ZAP Automation Framework plan template: full scan of a UAT target (plan M9 task 3). Not a scan profile.
+# Spider, AJAX spider (one browser), active scan with a time limit, a thread count and a delay taken from the
+# target's rate cap, then the XML and HTML reports. The "$include: login" entry is replaced by the jobs a login
+# profile needs (header token, verification request); it is empty without a login profile.
+template: zap-full-uat
+mode: full
+description: Spider, AJAX spider and active scan of a UAT web target.
+jobs:
+  - $include: login
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+      scanOnlyInScope: true
+  - type: spider
+    parameters:
+      context: "{{context}}"
+      user: "{{user}}"
+      url: "{{target_url}}"
+      maxDuration: "{{spider_minutes}}"
+      maxDepth: 8
+      acceptCookies: true
+      threadCount: "{{spider_threads}}"
+      requestWaitTime: "{{spider_wait_ms}}"
+  - type: spiderAjax
+    parameters:
+      context: "{{context}}"
+      user: "{{user}}"
+      url: "{{target_url}}"
+      browserId: firefox-headless
+      maxDuration: "{{ajax_minutes}}"
+      maxCrawlDepth: 5
+      numberOfBrowsers: 1
+      inScopeOnly: true
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: activeScan
+    parameters:
+      context: "{{context}}"
+      user: "{{user}}"
+      maxScanDurationInMins: "{{active_minutes}}"
+      maxRuleDurationInMins: 15
+      threadPerHost: "{{active_threads}}"
+      delayInMs: "{{active_delay_ms}}"
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: report
+    parameters:
+      template: traditional-xml-plus
+      reportDir: /zap/wrk
+      reportFile: zap
+      reportTitle: "{{report_title}}"
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk
+      reportFile: zap-report
+      reportTitle: "{{report_title}}"

@@ -1,0 +1,35 @@
+# skopeo copies a registry image into a docker-archive tar (plan M8 task 1). It runs from sources/image.py with
+# the egress proxy and, when the registry needs it, a 0600 auth.json in /config (REGISTRY_AUTH_FILE); registry
+# credentials are never on the command line. The image is pinned by digest only: the lock file's tag is `latest`,
+# which pin-images resolves to a digest, and the catalogue refuses `latest` as a tag.
+schema_version: 1
+scanners:
+  - tool: skopeo
+    description: Image intake (copy a registry image to a tar archive)
+    image: {name: quay.io/skopeo/stable, lock: SKOPEO}
+    user: "1000:1000"
+    network: none               # the source handler selects the egress client network
+    entrypoint: null            # the image's entrypoint is skopeo
+    mounts:
+      - {name: out, target: /out, read_only: false}
+      - {name: config, target: /config, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 256m}
+    limits: {cpus: 2, memory: 2g, pids: 256}
+    timeout_minutes: 60
+    max_parallel: 2
+    env:
+      HOME: /tmp
+      TMPDIR: /out/tmp          # layer staging goes to disk, not to memory
+    command:
+      - copy
+      - --retry-times
+      - "2"
+      - "{target_url}"          # docker://<validated reference>, supplied by sources/image.py
+      - "docker-archive:{out}/image.tar"
+    outputs:
+      - {file: image.tar, max_mb: 4096, format: none, required: true}
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []

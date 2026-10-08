@@ -1,0 +1,6 @@
+# SecureScan's own Gitleaks rule file. It is mounted read-only at /config/gitleaks.toml and passed with
+# --config, so a vendor's own .gitleaks.toml cannot switch rules off (design: "Secrets never land in
+# findings"). Inline allow-comments are ignored with --ignore-gitleaks-allow.
+# Add SecureScan-wide rules or allowlists below this line, never per vendor.
+[extend]
+useDefault = true

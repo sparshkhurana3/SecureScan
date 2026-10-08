@@ -1,0 +1,39 @@
+# The standard code scan (plan M8 task 7, design "Scan profiles"): every code tool of the catalogue.
+# Seeded into the scan_profiles table by `python -m securescan migrate`. A profile row is immutable per
+# (name, version): this file is version 2; version 1 (Semgrep and Gitleaks only) stays in the table and a scan
+# request can still name it with `profile_version: 1`.
+#
+# Applicability is decided by each tool's builder, not by this file. A tool that does not apply ends its job
+# as "skipped" with a coverage note, which the scan result and the report state:
+#   semgrep, gitleaks   every target kind (repository, zip, image filesystem)
+#   syft-grype          every target kind; images are read from the image archive (docker-archive)
+#   dependency-check    every target kind; blocked until the first NVD update has run; Maven Central is
+#                       queried through the egress proxy unless no_disclosure is on (default on for vendor
+#                       applications; set options.no_disclosure to override)
+#   spotbugs            skipped when no JAR, WAR, EAR or class directory is found under the source
+#   sonarqube           skipped for images without application source and for sources that are C# only
+profile: code-standard
+version: 2
+kind: sast
+description: Semgrep, Gitleaks, Syft and Grype, Dependency-Check, SpotBugs with Find Security Bugs and SonarQube on source code (repository, zip upload or image).
+jobs:
+  - tool: semgrep
+    timeout_min: 60
+    limits: {cpus: 2, memory: 4g}
+  - tool: gitleaks
+    timeout_min: 20
+    limits: {cpus: 1, memory: 1g}
+  - tool: syft-grype
+    timeout_min: 20
+    limits: {cpus: 1, memory: 2g}
+  - tool: dependency-check
+    timeout_min: 60
+    limits: {cpus: 2, memory: 4g}
+  - tool: spotbugs
+    timeout_min: 30
+    limits: {cpus: 2, memory: 3g}
+  - tool: sonarqube
+    timeout_min: 60
+    limits: {cpus: 2, memory: 3g}
+verdict:
+  fail_on: {critical: 1, high: 5}

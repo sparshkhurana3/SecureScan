@@ -1,0 +1,29 @@
+# Runner configuration of the regression suite (read by backend/securescan/domain/regression.py).
+# Expectations live next to the planted apps (backend/tests/fixtures/sample-apps/<app>/expected-findings.yaml)
+# and, for the optional external apps, in this directory (<app>.yaml). Format: README.md.
+#
+#   kinds.<name>.apps      applications to scan; the name of a directory in the fixtures directory
+#   kinds.<name>.tools     expectation keys to check (grype = the syft-grype job)
+#   kinds.<name>.profile   scan profile for this kind (default: `profile` below)
+#   kinds.<name>.external  true: the application is cloned by hand (juice-shop, webgoat); skipped when absent
+#
+# `content` gates a Semgrep rules update, `image` gates an image proposal (the tool under test is chosen by the
+# caller), `all` is `image` plus `external` (`content` is a subset of `image`; `dast` needs a target). `dast` needs SECURESCAN_REGRESSION_DAST_URL (a UAT Juice Shop).
+schema_version: 1
+profile: code-standard
+kinds:
+  content:
+    apps: [java-planted, js-planted, python-planted, csharp-planted]
+    tools: [semgrep]
+  image:
+    apps: [java-planted, js-planted, python-planted, csharp-planted]
+    tools: [semgrep, gitleaks, grype, dependency-check, spotbugs, sonarqube]
+  external:
+    apps: [juice-shop, webgoat]
+    tools: [semgrep]
+    external: true
+  dast:
+    apps: [juice-shop]
+    tools: [nuclei]
+    profile: nuclei-uat
+    external: true

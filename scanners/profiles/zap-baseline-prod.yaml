@@ -1,0 +1,46 @@
+# ZAP Automation Framework plan template: baseline, the only mode allowed on production (plan M9 task 3).
+# NOT a scan profile (no `profile:` key, so `migrate` does not seed it); backend/securescan/runner/tools/zap.py
+# fills the {{placeholders}} and writes the result to /zap/config/plan.yaml. A value that is exactly
+# "{{name}}" keeps its type; a key whose value is None is left out. `env:` (context, include/exclude paths,
+# authentication) is generated, never written here.
+#
+# What makes this baseline safe for production: passive scanning only (no activeScan job), the spider
+# follows links but never posts forms (postForm and processForm false), one spider thread, a request wait
+# derived from the target's rate cap, and a short duration. The renderer refuses to write a production plan
+# that contains any other job type or a form-posting spider (dast safety check in zap.py).
+template: zap-baseline-prod
+mode: baseline
+description: Passive baseline of a production web target, no form posting, XML and HTML reports.
+jobs:
+  - $include: login      # empty on production: a production plan never carries a login
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+      scanOnlyInScope: true
+  - type: spider
+    parameters:
+      context: "{{context}}"
+      user: "{{user}}"
+      url: "{{target_url}}"
+      maxDuration: 5
+      maxDepth: 5
+      acceptCookies: true
+      postForm: false
+      processForm: false
+      threadCount: "{{spider_threads}}"
+      requestWaitTime: "{{spider_wait_ms}}"
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+  - type: report
+    parameters:
+      template: traditional-xml-plus
+      reportDir: /zap/wrk
+      reportFile: zap
+      reportTitle: "{{report_title}}"
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk
+      reportFile: zap-report
+      reportTitle: "{{report_title}}"

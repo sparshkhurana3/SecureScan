@@ -1,0 +1,89 @@
+# Grype (plan M8 task 2). `syft-grype` is the job entry: the builder first runs Syft (syft.yaml) in its
+# prepare step, then the executor runs this container against the SBOM. The vulnerability database is read from
+# the content volume (<content root>/grype-db, written only by the daily updater below); scan containers never
+# download anything. Values marked "unverified" are confirmed by spike S7.
+schema_version: 1
+scanners:
+  - tool: syft-grype
+    description: Syft SBOM, then Grype vulnerabilities from the SBOM (one job, two containers, no network)
+    image: {name: anchore/grype, tag: v0.120.0, lock: GRYPE}
+    user: "1000:1000"
+    network: none
+    entrypoint: null            # the image's own entrypoint is /grype (unverified)
+    mounts:
+      - {name: out, target: /out, read_only: false}
+      # The builder opens this to read-write when SECURESCAN_GRYPE_DB_READ_ONLY is false (the default until S7 confirms).
+      - {name: content, target: /content/grype-db, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 512m}
+    limits: {cpus: 1, memory: 2g, pids: 128}
+    timeout_minutes: 20
+    max_parallel: 2
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      GRYPE_DB_CACHE_DIR: /content/grype-db
+      GRYPE_DB_AUTO_UPDATE: "false"
+      GRYPE_DB_VALIDATE_AGE: "true"
+      GRYPE_CHECK_FOR_APP_UPDATE: "false"
+      # GRYPE_DB_MAX_ALLOWED_BUILT_AGE is added by the builder from SECURESCAN_GRYPE_DB_MAX_AGE (default 120h).
+    command:
+      - "sbom:{out}/sbom.syft.json"
+      - "-o"
+      - "json={out}/grype.json"
+    outputs:
+      - {file: grype.json, max_mb: 300, format: json, required: true}
+    exit_codes:                 # findings never change the exit code (no --fail-on); any non-zero is a tool error
+      "0": completed
+      default: failed
+    target_kinds: [github_repo, vendor_repo, zip, image]
+    defectdojo_scan_type: Anchore Grype
+    defectdojo_file: grype.json
+
+  - tool: grype-db-update
+    description: Daily update of the Grype vulnerability database (egress to grype.anchore.io through the proxy)
+    image: {name: anchore/grype, tag: v0.120.0, lock: GRYPE}
+    user: "1000:1000"
+    network: none               # the updater switches to the egress client network
+    entrypoint: null
+    mounts:
+      - {name: out, target: /content/grype-db, read_only: false}
+    tmpfs:
+      - {path: /tmp, size: 1g}
+    limits: {cpus: 1, memory: 2g, pids: 128}
+    timeout_minutes: 30
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      GRYPE_DB_CACHE_DIR: /content/grype-db
+      GRYPE_CHECK_FOR_APP_UPDATE: "false"
+    command: [db, update]
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []
+
+  - tool: grype-db-status
+    description: Reads the age and schema of the Grype database (no network)
+    image: {name: anchore/grype, tag: v0.120.0, lock: GRYPE}
+    user: "1000:1000"
+    network: none
+    entrypoint: null
+    mounts:
+      - {name: content, target: /content/grype-db, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 64m}
+    limits: {cpus: 1, memory: 1g, pids: 64}
+    timeout_minutes: 5
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      GRYPE_DB_CACHE_DIR: /content/grype-db
+      GRYPE_DB_AUTO_UPDATE: "false"
+      GRYPE_CHECK_FOR_APP_UPDATE: "false"
+    command: [db, status, -o, json]
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []

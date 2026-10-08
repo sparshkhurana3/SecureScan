@@ -1,0 +1,10 @@
+# Optional external regression target: OWASP WebGoat (clone with `python scripts/dev.py fetch-fixtures`).
+# Nothing here is verified yet: `verified: false` until a real run produced a matching finding. Format: README.md.
+app: webgoat
+schema_version: 1
+tools:
+  semgrep:
+    - id: java-lesson-sql-injection
+      expect_category: "SQL injection: query built by string concatenation with request input"
+      verified: false
+      note: "The SQL injection lessons concatenate lesson input into JDBC statements."

@@ -1,0 +1,13 @@
+# DAST baseline: ZAP passive baseline. The only profile a production target accepts. Seeded by `migrate`.
+# A profile row is immutable per (name, version): to change this, add a new version.
+profile: dast-baseline
+version: 1
+kind: dast
+mode: baseline
+description: ZAP passive baseline (no active attacks, no form posting). Allowed on production and UAT targets.
+jobs:
+  - tool: zap
+    timeout_min: 30
+    limits: {cpus: 2, memory: 4g}
+verdict:
+  fail_on: {critical: 1, high: 3}

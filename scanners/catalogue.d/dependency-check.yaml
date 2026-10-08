@@ -1,0 +1,95 @@
+# OWASP Dependency-Check (plan M8 task 3). The NVD data lives in <content root>/odc-data (written by the
+# `odc-update` entry below, read by scans); scans run with --noupdate and are blocked until the first update ran.
+# Values marked "unverified" are confirmed by spike S7: flag names in --help, the property name of the NVD key
+# (nvd.api.key), exit code 14, whether a read-only data mount works.
+schema_version: 1
+scanners:
+  - tool: dependency-check
+    description: Known vulnerabilities in dependencies, including JARs and DLLs shipped without manifests
+    image: {name: owasp/dependency-check, tag: 13.0.0, lock: DEPENDENCY_CHECK}
+    user: "1000:1000"
+    network: none               # the builder joins the egress client network when Maven Central is enabled
+    entrypoint: null            # the image's own entrypoint is dependency-check.sh (unverified)
+    mounts:
+      - {name: src, target: /src, read_only: true}
+      - {name: out, target: /out, read_only: false}
+      - {name: config, target: /config, read_only: true}
+      # Opened to read-write by the builder unless SECURESCAN_ODC_DATA_READ_ONLY=true (H2 normally wants to write).
+      - {name: content, target: /usr/share/dependency-check/data, read_only: true}
+    tmpfs:
+      - {path: /tmp, size: 1g}
+    limits: {cpus: 2, memory: 4g, pids: 512}
+    timeout_minutes: 60
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      JAVA_OPTS: "-Xmx3g -Djava.io.tmpdir=/tmp"
+    command:
+      - --scan
+      - "{src}"
+      - --format
+      - XML
+      - --format
+      - HTML
+      - --out
+      - "{out}"
+      - --project
+      - "{project_key}"
+      - --data
+      - "{content}"
+      - --noupdate
+      - --disableVersionCheck
+      - --disableOssIndex
+      - --disableNodeAudit
+      - --disableYarnAudit
+      - --disablePnpmAudit
+      - --propertyfile
+      - "{config}/odc.properties"
+    optional_args:
+      - {flag: --disableCentral, value: none}
+      - {flag: --proxyserver, value: pattern, max_length: 253}
+      - {flag: --proxyport, value: int}
+      - {flag: --exclude, value: pattern, repeatable: true, max_count: 50, max_length: 200}
+    outputs:
+      - {file: dependency-check-report.xml, max_mb: 300, format: xml, required: true}
+      - {file: dependency-check-report.html, max_mb: 300, format: none, required: false}
+    exit_codes:
+      "0": completed
+      "14": completed_partial
+      default: failed
+    target_kinds: [github_repo, vendor_repo, zip, image]
+    defectdojo_scan_type: Dependency Check Scan
+    defectdojo_file: dependency-check-report.xml
+
+  - tool: odc-update
+    description: Daily update of the Dependency-Check NVD data (egress to NVD, CISA and GitHub through the proxy)
+    image: {name: owasp/dependency-check, tag: 13.0.0, lock: DEPENDENCY_CHECK}
+    user: "1000:1000"
+    network: none               # the updater switches to the egress client network
+    entrypoint: null
+    mounts:
+      - {name: config, target: /config, read_only: true}    # odc.properties with the NVD key (0600), this container only
+      - {name: out, target: /usr/share/dependency-check/data, read_only: false}
+    tmpfs:
+      - {path: /tmp, size: 1g}
+    limits: {cpus: 2, memory: 3g, pids: 512}
+    timeout_minutes: 240        # the first full download takes 20 minutes with an API key and hours without
+    max_parallel: 1
+    env:
+      HOME: /tmp
+      JAVA_OPTS: "-Xmx2g -Djava.io.tmpdir=/tmp"
+    command:
+      - --updateonly
+      - --data
+      - /usr/share/dependency-check/data
+      - --propertyfile
+      - "{config}/odc.properties"
+      - --disableVersionCheck
+    optional_args:
+      - {flag: --nvdDatafeed, value: pattern, max_length: 500}
+      - {flag: --proxyserver, value: pattern, max_length: 253}
+      - {flag: --proxyport, value: int}
+    exit_codes:
+      "0": completed
+      default: failed
+    target_kinds: []

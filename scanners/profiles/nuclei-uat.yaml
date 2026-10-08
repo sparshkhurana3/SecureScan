@@ -1,0 +1,7 @@
+# Nuclei settings for UAT targets (plan M9 task 4). Not a scan profile. The fixed flags (-duc -ni -dut ...)
+# are in scanners/catalogue.d/nuclei.yaml; the values below are what the builder may vary.
+# The rate and concurrency are bounded by the target's rate limit and the platform maximum.
+template: nuclei-uat
+default_rps: 50          # -rl when the target has no rate limit (plan: 50)
+default_concurrency: 10  # -c (plan: 10); lowered to the rate when the rate is smaller
+templates_link: nuclei-templates   # symlink in the content volume -> nuclei-templates-<date>

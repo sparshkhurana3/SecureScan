@@ -1,0 +1,23 @@
+# ZAP authentication fragment: JSON login (the request body is JSON, for example
+# {"user":"{%username%}","password":"{%password%}"}). Same rules as auth-form.yaml.
+authentication:
+  method: json
+  parameters:
+    loginPageUrl: "{{login_page_url}}"
+    loginRequestUrl: "{{login_request_url}}"
+    loginRequestBody: "{{login_request_body}}"
+  verification:
+    method: "{{verification_method}}"
+    loggedInRegex: "{{logged_in_regex}}"
+    loggedOutRegex: "{{logged_out_regex}}"
+    pollUrl: "{{poll_url}}"
+    pollFrequency: "{{poll_frequency}}"
+    pollUnits: "{{poll_units}}"
+    pollPostData: "{{poll_post_data}}"
+sessionManagement:
+  method: cookie
+users:
+  - name: scan-user
+    credentials:
+      username: "${ZAP_AUTH_USERNAME}"
+      password: "${ZAP_AUTH_PASSWORD}"

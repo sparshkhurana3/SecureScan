@@ -1,0 +1,26 @@
+# ZAP authentication fragment: browser-based login (needs the 1 GB /dev/shm the builder sets). An optional
+# one-time code is read from ${ZAP_AUTH_TOTP_SECRET}. Same rules as auth-form.yaml. Unverified against the
+# pinned image: the parameter names of the browser method (docs/build-notes/M9.md).
+authentication:
+  method: browser
+  parameters:
+    loginPageUrl: "{{login_page_url}}"
+    browserId: "{{browser_id}}"
+    loginPageWait: "{{login_page_wait}}"
+    steps: "{{steps}}"
+  verification:
+    method: "{{verification_method}}"
+    loggedInRegex: "{{logged_in_regex}}"
+    loggedOutRegex: "{{logged_out_regex}}"
+    pollUrl: "{{poll_url}}"
+    pollFrequency: "{{poll_frequency}}"
+    pollUnits: "{{poll_units}}"
+    pollPostData: "{{poll_post_data}}"
+sessionManagement:
+  method: autodetect
+users:
+  - name: scan-user
+    credentials:
+      username: "${ZAP_AUTH_USERNAME}"
+      password: "${ZAP_AUTH_PASSWORD}"
+      totp: "{{totp}}"

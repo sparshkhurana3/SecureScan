@@ -1,0 +1,12 @@
+# Tests added to the first crawl job of a plan with a form, JSON or browser login: ZAP's own authentication
+# statistics must show at least one successful login, otherwise the plan ends in error and the job FAILS
+# (design: "the job fails if the logged-in indicator disappears"). Unverified: the statistic name on the
+# pinned ZAP version (docs/build-notes/M9.md). If a login scan always fails with a failed test, look up the
+# authentication statistics in ZAP's help and correct `statistic` here; no code change is needed.
+tests:
+  - name: At least one successful login
+    type: stats
+    statistic: stats.auth.success
+    operator: ">="
+    value: 1
+    onFail: error

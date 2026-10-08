@@ -1,0 +1,22 @@
+# ZAP authentication fragment: header token (for example Authorization: Bearer ...). ZAP has no user for this
+# method; a replacer job adds the header to every request to the target's origin and a requestor job checks
+# that the token is accepted (the response code of poll_url) before anything is scanned: if it is not, the
+# plan ends in error and the job fails. The header name, value and origin come from the container environment
+# (ZAP_AUTH_HEADER, ZAP_AUTH_HEADER_VALUE, ZAP_AUTH_HEADER_SITE); the value is never written to the plan.
+jobs:
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: SecureScan login header
+        url: "{{site_regex}}"
+        matchType: req_header
+        matchString: "${ZAP_AUTH_HEADER}"
+        matchRegex: false
+        replacementString: "${ZAP_AUTH_HEADER_VALUE}"
+  - type: requestor
+    requests:
+      - name: SecureScan token check
+        url: "{{header_poll_url}}"
+        method: GET
+        responseCode: "{{expected_status}}"

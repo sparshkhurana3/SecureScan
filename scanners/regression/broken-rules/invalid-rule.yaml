@@ -1,0 +1,8 @@
+# A Semgrep rule file that Semgrep cannot load (a rule needs `languages` and one pattern key; the indentation below is
+# also wrong on purpose). Used by the "broken rule" drill in README.md: place it in a candidate rules directory and
+# run the suite; the Semgrep job must fail and the suite must report `error`.
+rules:
+  - id: securescan-regression-invalid
+    message: this rule is deliberately broken
+   severity: ERROR
+    pattern-either: [
