@@ -2,8 +2,9 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
 import { errorMessage } from "../api/client";
+import { BRAND } from "../brand/brand";
 import { useMe, useSignOut } from "../lib/auth";
-import { Wordmark } from "./Wordmark";
+import { BrandMark } from "./BrandMark";
 import { Button } from "./ui/button";
 
 const navLinkClass =
@@ -31,8 +32,11 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link to="/" aria-label="SecureScan home" className="flex items-center gap-3 no-underline">
-            <Wordmark height={24} />
-            <span className="border-l border-border pl-3 text-sm font-semibold">SecureScan</span>
+            <BrandMark />
+            <span className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold text-foreground">{BRAND.productName}</span>
+              <span className="text-xs text-muted-foreground">{BRAND.companyName}</span>
+            </span>
           </Link>
           <nav aria-label="Main" className="flex flex-wrap items-center gap-1">
             <Link to="/sast" className={navLinkClass}>

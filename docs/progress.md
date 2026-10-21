@@ -94,3 +94,4 @@ Steps that only the user can do on Ubuntu 24 (carry these into the first real ru
 
 - 2026-10-07: the user develops and runs on Ubuntu 24, not Windows 11. Plan section 2.1 (Windows, WSL2) is superseded; see `docs/decisions.md`.
 - 2026-10-08: M2 to M11 deviations are listed in `docs/decisions.md` (entry of that date). `deploy/defectdojo/upstream/docker-compose.yml` is a placeholder: replace it first on Ubuntu (`docs/install.md` step 8a).
+- 2026-10-21: portal branding applied from the brand kit (header tile, login logo, favicon, icons, manifest, title); checked in a Node 24 container: `vite build` passes and lint, typecheck and tests show no difference from the baseline. See `docs/decisions.md`.
