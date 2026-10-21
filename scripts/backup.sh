@@ -26,7 +26,7 @@
 #   BACKUP_PROJECT          Compose project name                            default securescan
 #
 # What is in a set (a directory of encrypted files; nothing unencrypted except MANIFEST.txt and SHA256SUMS):
-#   db-securescan.dump.age db-defectdojo.dump.age db-sonarqube.dump.age   pg_dump --format=custom
+#   db-securescan.dump.age db-defectdojo.dump.age                           pg_dump --format=custom
 #   db-globals.sql.age                                                      roles (pg_dumpall --globals-only)
 #   artifacts.tar.age defectdojo_media.tar.age data.tar.age                 volumes (data without workspaces)
 #   content-manifest.txt.age                                                what the content volume holds (not the rules)
@@ -212,7 +212,6 @@ volume_tar() {
 
 dump_db securescan
 dump_db defectdojo
-dump_db sonarqube
 
 STEP="database roles"
 log "dumping database roles"
@@ -271,7 +270,7 @@ SIZE=$(du -sb "$OUT_PARTIAL" | cut -f1)
 
 # a part of zero bytes means the producing command failed silently
 for f in "$OUT_PARTIAL"/*.age; do [ -s "$f" ] || die "part $(basename "$f") is empty"; done
-for must in db-securescan.dump.age db-defectdojo.dump.age db-sonarqube.dump.age artifacts.tar.age defectdojo_media.tar.age; do
+for must in db-securescan.dump.age db-defectdojo.dump.age artifacts.tar.age defectdojo_media.tar.age; do
   [ -s "$OUT_PARTIAL/$must" ] || die "part $must is missing"
 done
 mv "$OUT_PARTIAL" "$OUT"

@@ -4,39 +4,31 @@
   feed and active flag.
 * ``POST /api/v1/content-versions/updates`` (Admin): queue an update of one feed now (``content_update`` task,
   maintenance queue). The worker runs it; the answer is ``202``.
-* ``GET`` and ``PUT /api/v1/content/nvd-key`` (Admin): whether an NVD API key is configured, and storing a new
-  one (encrypted, kind ``nvd_key``; older keys are revoked). The key is never returned.
 
 Updaters and their rules: ``securescan/jobs/updaters.py`` and ``content/README.md``.
 """
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from securescan.api.pagination import CursorPage, PageDep, paginate
-from securescan.api.problems import ServiceUnavailable, UnprocessableEntity
+from securescan.api.problems import ServiceUnavailable
 from securescan.api.schemas import ORMModel
 from securescan.auth.roles import AdminUser, AnalystUser
-from securescan.config import get_settings
 from securescan.db.models.content import ContentVersion
-from securescan.db.models.credentials import Credential
-from securescan.db.models.enums import ContentFeed, CredentialKind
+from securescan.db.models.enums import ContentFeed
 from securescan.db.session import DbSession
 from securescan.domain.audit import record_audit
-from securescan.domain.credentials import get_active_credential_by_kind, store_credential
-from securescan.util import utcnow
+from securescan.jobs.scanner_health import ALL_FEEDS
 
 router = APIRouter(tags=["content"])
-
-_KEY_SHAPE = re.compile(r"^[A-Za-z0-9._-]{8,200}$")
 
 
 class ContentVersionOut(ORMModel):
@@ -57,29 +49,18 @@ class ContentVersionOut(ORMModel):
 class UpdateIn(BaseModel):
     feed: ContentFeed
 
+    @field_validator("feed")
+    @classmethod
+    def _updated(cls, value: ContentFeed) -> ContentFeed:
+        if value not in ALL_FEEDS:
+            raise ValueError("This feed is no longer updated: its scanner was removed.")
+        return value
+
 
 class UpdateAccepted(BaseModel):
     feed: ContentFeed
     queued: bool = Field(description="false when an update of this feed is already waiting in the queue")
     message: str
-
-
-class NvdKeyIn(BaseModel):
-    key: SecretStr
-
-    @field_validator("key")
-    @classmethod
-    def _shape(cls, value: SecretStr) -> SecretStr:
-        if not _KEY_SHAPE.match(value.get_secret_value().strip()):
-            raise ValueError("The NVD API key looks wrong: it is 8 to 200 letters, digits, dots, dashes or underscores.")
-        return value
-
-
-class NvdKeyStatus(BaseModel):
-    configured: bool
-    source: str = Field(description="credential (stored in Settings), environment (secret file) or none")
-    mirror: bool = Field(description="a Dependency-Check NVD mirror URL is configured")
-    stored_at: datetime | None = None
 
 
 @router.get(
@@ -124,42 +105,3 @@ async def start_update(body: UpdateIn, db: DbSession, user: AdminUser, request: 
     if job_id is None:
         return UpdateAccepted(feed=body.feed, queued=False, message="An update of this feed is already waiting to run.")
     return UpdateAccepted(feed=body.feed, queued=True, message="The update was queued; the worker starts it shortly.")
-
-
-@router.get("/content/nvd-key", response_model=NvdKeyStatus, summary="Is an NVD API key configured? (Admin)")
-async def nvd_key_status(db: DbSession, user: AdminUser) -> NvdKeyStatus:
-    settings = get_settings()
-    credential = await get_active_credential_by_kind(db, CredentialKind.NVD_KEY)
-    mirror = bool(settings.nvd_datafeed_url.strip())
-    if credential is not None:
-        return NvdKeyStatus(configured=True, source="credential", mirror=mirror, stored_at=credential.created_at)
-    if settings.nvd_api_key:
-        return NvdKeyStatus(configured=True, source="environment", mirror=mirror)
-    return NvdKeyStatus(configured=False, source="none", mirror=mirror)
-
-
-@router.put("/content/nvd-key", response_model=NvdKeyStatus, summary="Store the NVD API key (Admin)")
-async def store_nvd_key(body: NvdKeyIn, db: DbSession, user: AdminUser, request: Request) -> NvdKeyStatus:
-    key = body.key.get_secret_value().strip()
-    if not _KEY_SHAPE.match(key):
-        raise UnprocessableEntity("The NVD API key looks wrong.", code="content.bad_nvd_key")
-    now = utcnow()
-    older = (
-        await db.scalars(
-            select(Credential).where(Credential.kind == CredentialKind.NVD_KEY, Credential.revoked_at.is_(None))
-        )
-    ).all()
-    for credential in older:
-        credential.revoked_at = now
-    created = await store_credential(
-        db,
-        kind=CredentialKind.NVD_KEY,
-        name="NVD API key",
-        secret=key,
-        created_by_id=getattr(user, "id", None),
-    )
-    await record_audit(db, user, "credential.create", "credential", created.id, {"kind": CredentialKind.NVD_KEY.value}, request=request)
-    await db.commit()
-    return NvdKeyStatus(
-        configured=True, source="credential", mirror=bool(get_settings().nvd_datafeed_url.strip()), stored_at=created.created_at
-    )

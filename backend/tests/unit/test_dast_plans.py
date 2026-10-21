@@ -117,7 +117,7 @@ def test_the_templates_are_not_scan_profiles_and_the_dast_profiles_are() -> None
     for name, (mode, tools) in expected.items():
         doc = parse_profile_yaml((REPO_SCANNERS / "profiles" / f"{name}.yaml").read_text(encoding="utf-8"))
         assert doc.profile == name and doc.kind == "dast" and doc.mode == mode and doc.tools == tools
-        assert doc.version == 1
+        assert doc.version == 2  # version 2: limits for the 4 vCPU / 8 GB machine
 
 
 def test_dast_profile_timeouts() -> None:
@@ -423,7 +423,7 @@ def test_builder_is_registered_and_runs_on_the_dast_network_only() -> None:
     ]  # fmt: skip
     assert spec.network == ctx.settings.network_dast and spec.extra_networks == []  # no way out except the proxy
     assert spec.shm_size == "1g" and spec.user == "1000:1000" and spec.read_only_rootfs is True
-    assert spec.entrypoint == [""] and spec.mem_limit == "4g"
+    assert spec.entrypoint == [""] and spec.mem_limit == "3g"
     targets = {target: (ro) for _src, target, ro in spec.binds}
     assert targets == {"/zap/wrk": False, "/zap/config": True}
     assert "/home/zap" in spec.tmpfs and spec.env["HOME"] == "/home/zap"
@@ -464,7 +464,7 @@ def test_catalogue_entry_of_zap() -> None:
     from tests.unit.runner_helpers import real_catalogue
 
     entry = real_catalogue()["zap"]
-    assert entry.network == "dast" and entry.lock == "dast" and entry.max_parallel == 1
+    assert entry.network == "dast" and entry.lock == "scanner" and entry.max_parallel == 1
     assert entry.defectdojo_scan_type == "ZAP Scan" and entry.defectdojo_file == "zap.xml"
     assert entry.target_kinds == ["url"] and entry.user == "1000:1000"
     assert entry.mount_target("out") == "/zap/wrk"

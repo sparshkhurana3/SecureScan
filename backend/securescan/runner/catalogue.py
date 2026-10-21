@@ -11,7 +11,7 @@ File format::
       - tool: semgrep
         image: {name: semgrep/semgrep, tag: 1.179.0-nonroot, lock: SEMGREP}
         user: "1000:1000"
-        network: none                    # none | sonarqube | dast
+        network: none                    # none | dast
         mounts:                          # name in {src, out, config, content}
           - {name: src, target: /src, read_only: true}
         tmpfs: [{path: /tmp, size: 512m}]
@@ -61,7 +61,7 @@ Outcome = Literal["completed", "completed_partial", "failed"]
 OUTCOMES = ("completed", "completed_partial", "failed")
 MOUNT_NAMES = ("src", "out", "config", "content")
 PLACEHOLDERS = frozenset({"src", "out", "config", "content", "target_url", "project_key"})
-NETWORKS = ("none", "sonarqube", "dast")
+NETWORKS = ("none", "dast")
 IMAGE_ENV_PREFIX = "SECURESCAN_IMAGE_"
 
 _BRACES = re.compile(r"\{([^{}]*)\}")
@@ -231,7 +231,7 @@ class CatalogueEntry(BaseModel):
     description: str = ""
     image: ImageRef
     user: str = "1000:1000"
-    network: Literal["none", "sonarqube", "dast"] = "none"
+    network: Literal["none", "dast"] = "none"
     mounts: list[MountSpec] = Field(default_factory=list)
     tmpfs: list[TmpfsSpec] = Field(default_factory=list)
     limits: Limits = Field(default_factory=Limits)

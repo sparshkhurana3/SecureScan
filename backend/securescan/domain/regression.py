@@ -147,7 +147,7 @@ DEFAULT_SUITE = SuiteConfig(
         ),
         "image": KindConfig(
             apps=["java-planted", "js-planted", "python-planted", "csharp-planted"],
-            tools=["semgrep", "gitleaks", "grype", "dependency-check", "spotbugs", "sonarqube"],
+            tools=["semgrep", "gitleaks", "grype", "spotbugs"],
         ),
         "external": KindConfig(apps=["juice-shop", "webgoat"], tools=["semgrep"], external=True),
         "dast": KindConfig(apps=["juice-shop"], tools=["nuclei"], profile="nuclei-uat", external=True),

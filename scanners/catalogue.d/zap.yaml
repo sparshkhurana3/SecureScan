@@ -1,7 +1,7 @@
 # ZAP (Automation Framework) for web scans: baseline on production, full and API on UAT (plan M9 task 3).
 # The container runs on the `dast` network only and reaches its target through the job's own squid proxy
 # (runner/dast_egress.py); the proxy options are appended by the builder (optional_args `-config`).
-# `lock: dast` serialises all web scans: one DAST job at a time.
+# `lock: scanner` serialises every scan job, SAST and DAST alike: one scanner container at a time.
 # Values marked "unverified" are written from the plan and ZAP's documentation and are confirmed (or corrected)
 # by the first integration run: docs/build-notes/M9.md lists what to check.
 schema_version: 1
@@ -18,13 +18,13 @@ scanners:
     tmpfs:
       - {path: /home/zap, size: 512m}   # ZAP home (HOME below); the root file system is read-only
       - {path: /tmp, size: 512m}
-    limits: {cpus: 2, memory: 4g, pids: 512}
+    limits: {cpus: 2, memory: 3g, pids: 512}   # heap, the headless Firefox of the AJAX spider and both tmpfs
     timeout_minutes: 480        # full scans; the baseline profile sets 30 minutes
     max_parallel: 1
-    lock: dast
+    lock: scanner
     env:
       HOME: /home/zap
-      JAVA_OPTS: "-Xmx2g"       # unverified: honoured by zap.sh; otherwise the 4g cgroup limit is the only bound
+      JAVA_OPTS: "-Xmx1280m"    # unverified: honoured by zap.sh; otherwise the 3g cgroup limit is the only bound
     command:
       - zap.sh
       - -cmd

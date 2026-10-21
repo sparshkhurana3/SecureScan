@@ -12,13 +12,14 @@ SecureScan is an on-premises SAST and DAST scanning platform for Sona Comstar. I
 ## Rules that are not negotiable
 
 - DefectDojo is the only place findings are parsed and triaged. SecureScan never parses scanner output into findings; it uploads raw reports and reads findings back.
-- Only `gateway`, `api`, `worker`, `db`, `socket-proxy` and DefectDojo's services run permanently. Scanners, the SonarQube server, egress proxies and updaters run on demand.
+- Only `gateway`, `api`, `worker`, `db`, `socket-proxy` and DefectDojo's services run permanently. Scanners, egress proxies and updaters run on demand.
+- The platform is sized for 4 vCPU and 8 GB RAM: one scanner container at a time (catalogue lock `scanner`), scanners within 2 CPUs and 3 GB, always-on memory limits within 5.5 GB (`tests/unit/test_operations_files.py` checks it). No SonarQube, no Dependency-Check.
 - The worker is the only component that talks to Docker, only through `socket-proxy`, only with specs built from `scanners/catalogue.yaml`.
 - Two roles: `Admin` and `Analyst`, from the Entra ID `roles` claim. No local users, no ownership scoping.
 - Production DAST targets get unauthenticated ZAP baseline scans only. Everything else is UAT only.
 - No CodeQL. No scanner outside the catalogue. Every image pinned by digest, never `latest`.
 - Secrets never in git, logs, findings, reports or exports.
-- Semgrep rules and SonarQube analyzers are for internal use only; no scanner output to external AI services.
+- Semgrep rules are for internal use only; no scanner output to external AI services.
 
 ## Working conventions
 

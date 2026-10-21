@@ -40,7 +40,7 @@ Rules for writing entries:
    with `verified: false` and write a `note`, or remove it and record the decision in `docs/decisions.md`.
 4. Do not add entries to make a failing run pass. Tighten or relax them in a commit that says why.
 
-Tool keys: `semgrep`, `gitleaks`, `grype` (the `syft-grype` job), `dependency-check`, `spotbugs`, `sonarqube`, `nuclei`.
+Tool keys: `semgrep`, `gitleaks`, `grype` (the `syft-grype` job), `spotbugs`, `nuclei`.
 
 ## How the runner matches
 

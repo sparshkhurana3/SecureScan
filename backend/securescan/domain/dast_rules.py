@@ -47,7 +47,9 @@ from securescan.db.models.enums import AppType, TargetEnvironment, TargetKind
 from securescan.integrations.github.scheduling import CronError, blackout_end, in_blackout
 from securescan.util import ensure_utc, utcnow
 
-DAST_LOCK = "dast"
+# The one lock every scan job shares (scanners/catalogue.yaml): one scanner container at a time, so DAST jobs
+# also run one at a time. It was "dast" before the 4 vCPU / 8 GB sizing (docs/decisions.md, 2026-10-21).
+DAST_LOCK = "scanner"
 ZAP_TOOL = "zap"
 NUCLEI_TOOL = "nuclei"
 DAST_TOOLS = (ZAP_TOOL, NUCLEI_TOOL)

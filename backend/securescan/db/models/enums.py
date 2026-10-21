@@ -120,10 +120,10 @@ class CredentialKind(str, enum.Enum):  # noqa: UP042
     VENDOR_TOKEN = "vendor_token"
     REGISTRY = "registry"
     DAST_LOGIN = "dast_login"
-    NVD_KEY = "nvd_key"
+    NVD_KEY = "nvd_key"  # retired with Dependency-Check (2026-10-21); kept so stored rows still load
     DEFECTDOJO_TOKEN = "defectdojo_token"
     DEFECTDOJO_ADMIN_TOKEN = "defectdojo_admin_token"
-    SONARQUBE_TOKEN = "sonarqube_token"
+    SONARQUBE_TOKEN = "sonarqube_token"  # retired with SonarQube (2026-10-21); kept so stored rows still load
 
 
 class ScheduleKind(str, enum.Enum):  # noqa: UP042
@@ -136,7 +136,7 @@ class ContentFeed(str, enum.Enum):  # noqa: UP042
     SEMGREP_RULES = "semgrep_rules"
     NUCLEI_TEMPLATES = "nuclei_templates"
     GRYPE_DB = "grype_db"
-    NVD_DATA = "nvd_data"
+    NVD_DATA = "nvd_data"  # retired with Dependency-Check (2026-10-21); kept so stored rows still load
 
 
 class OutboxState(str, enum.Enum):  # noqa: UP042

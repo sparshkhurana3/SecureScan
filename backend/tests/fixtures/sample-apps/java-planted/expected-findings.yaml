@@ -29,7 +29,6 @@ tools:
       file: pom.xml
       verified: false
       note: "Declared in pom.xml with an explicit version; Grype reads it through the Syft SBOM."
-  dependency-check: []   # log4j-core is declared in pom.xml but is not inside the committed jar: Dependency-Check may find nothing. Fill after S7.
   spotbugs:
     - id: java-fsb-sql-injection
       expect_category: "SQL injection (JDBC) in UserServlet.doGet"
@@ -40,4 +39,3 @@ tools:
     - id: java-fsb-hardcoded-password
       expect_category: "hard-coded password (DB_PASSWORD passed to DriverManager.getConnection)"
       verified: false
-  sonarqube: []          # fill after spike S3

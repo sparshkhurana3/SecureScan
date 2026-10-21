@@ -1,15 +1,16 @@
 # DAST full: ZAP spider, AJAX spider and active scan, then Nuclei. UAT targets only. Seeded by `migrate`.
+# Version 2: limits lowered for the 4 vCPU / 8 GB sizing (docs/decisions.md, 2026-10-21).
 profile: dast-full
-version: 1
+version: 2
 kind: dast
 mode: full
 description: ZAP full scan followed by Nuclei. UAT targets only.
 jobs:
   - tool: zap
     timeout_min: 480
-    limits: {cpus: 2, memory: 4g}
+    limits: {cpus: 2, memory: 3g}
   - tool: nuclei
     timeout_min: 120
-    limits: {cpus: 2, memory: 2g}
+    limits: {cpus: 2, memory: 1536m}
 verdict:
   fail_on: {critical: 1, high: 3}

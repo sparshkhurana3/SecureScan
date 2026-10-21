@@ -8,6 +8,10 @@
 #
 # Everything below that says "unverified" is a value written from the plan and the spike scripts and is
 # confirmed (or corrected) by spike S7 on Ubuntu 24: docs/spikes/s7-scanner-contract.md.
+#
+# Sizing (docs/decisions.md, 2026-10-21): the platform runs on 4 vCPU and 8 GB. Every scan tool takes the
+# lock `scanner`, so one scanner container runs at a time, and no scanner may use more than 2 CPUs and 3 GB.
+# A tmpfs is charged to the container's memory limit, so tmpfs sizes count against these limits.
 schema_version: 1
 scanners:
   - tool: semgrep
@@ -22,9 +26,10 @@ scanners:
       - {name: content, target: /content/semgrep/rules, read_only: true}
     tmpfs:
       - {path: /tmp, size: 512m}
-    limits: {cpus: 2, memory: 4g, pids: 256}
+    limits: {cpus: 2, memory: 2560m, pids: 256}
     timeout_minutes: 60
-    max_parallel: 2
+    max_parallel: 1
+    lock: scanner             # one scanner container at a time on the 4 vCPU / 8 GB machine
     env:
       HOME: /tmp
       XDG_CACHE_HOME: /tmp/.cache
@@ -47,9 +52,9 @@ scanners:
       - --timeout-threshold
       - "3"
       - --max-memory
-      - "3000"
+      - "2000"
       - --jobs
-      - "2"
+      - "1"
       - "{src}"
     optional_args:
       - {flag: --exclude, value: pattern, repeatable: true, max_count: 200, max_length: 200}
@@ -79,7 +84,8 @@ scanners:
       - {path: /tmp, size: 128m}
     limits: {cpus: 1, memory: 1g, pids: 128}
     timeout_minutes: 20
-    max_parallel: 2
+    max_parallel: 1
+    lock: scanner
     env:
       HOME: /tmp
       GIT_CONFIG_COUNT: "1"

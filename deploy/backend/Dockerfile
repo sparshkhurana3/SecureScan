@@ -1,4 +1,4 @@
-# One image for api, worker, migrate, dojo-init and sonar-init. Build context: repository root.
+# One image for api, worker, migrate and dojo-init. Build context: repository root.
 ARG PYTHON_IMAGE=python:3.14-slim-trixie
 FROM ${PYTHON_IMAGE} AS builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv

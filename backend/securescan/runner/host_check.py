@@ -1,4 +1,4 @@
-"""Checks of the machine the worker runs on: cgroup v2, kernel limits, Docker version.
+"""Checks of the machine the worker runs on: cgroup v2 and the Docker version.
 
 ``scripts/check_host.sh`` checks the host from the outside (it can run ``docker info`` and read
 ``sysctl``). This module checks what the worker can see from inside its container, at start-up
@@ -7,8 +7,6 @@
 * cgroup v2 with the ``memory`` and ``pids`` controllers: without them the CPU, memory and PID limits
   of the scanner containers are not enforced. The container's own view (``/sys/fs/cgroup``) shows the
   host's cgroup version.
-* ``vm.max_map_count`` and ``fs.file-max`` (``/proc/sys``, global to the host): SonarQube's search engine
-  fails to start below the values of the install guide.
 * The Docker Engine version from the headers of ``GET /_ping`` (the socket proxy allows it): the API
   version must be one the launcher speaks, and the install guide asks for Engine 29 or later.
 
@@ -56,16 +54,6 @@ class HostCheckError(RuntimeError):
 # ================================================================================ parsing (pure)
 
 
-def parse_int_file(text: str | None) -> int | None:
-    """The content of ``/proc/sys/vm/max_map_count`` and similar: one integer."""
-    if text is None:
-        return None
-    try:
-        return int(text.strip().split()[0])
-    except (ValueError, IndexError):
-        return None
-
-
 def parse_controllers(text: str | None) -> set[str]:
     """``cpuset cpu io memory pids`` -> a set (``/sys/fs/cgroup/cgroup.controllers``)."""
     return set((text or "").split())
@@ -93,16 +81,12 @@ class HostFacts:
 
     cgroup_v2: bool | None = None
     cgroup_controllers: frozenset[str] | None = None
-    max_map_count: int | None = None
-    file_max: int | None = None
     docker_version: tuple[int, int, int] | None = None
     docker_api: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
 class Thresholds:
-    max_map_count: int = 524288
-    file_max: int = 131072
     docker_major: int = 29
     docker_api: tuple[int, int] = (1, 44)
 
@@ -110,8 +94,6 @@ class Thresholds:
     def from_settings(cls, settings: Settings) -> Thresholds:
         api = parse_api_version(settings.host_min_docker_api) or (1, 44)
         return cls(
-            max_map_count=settings.host_min_max_map_count,
-            file_max=settings.host_min_file_max,
             docker_major=settings.host_min_docker_major,
             docker_api=api,
         )
@@ -197,9 +179,6 @@ def evaluate(facts: HostFacts, limits: Thresholds | None = None) -> HostCheckRes
             else:
                 add(Check("cgroup_controllers", True, True, "memory, pids and cpu controllers available."))
 
-    _kernel(add, "vm.max_map_count", facts.max_map_count, t.max_map_count)
-    _kernel(add, "fs.file-max", facts.file_max, t.file_max)
-
     if facts.docker_api is None and facts.docker_version is None:
         add(Check("docker_version", False, False, "Could not read the Docker Engine version through the socket proxy."))
     else:
@@ -225,21 +204,6 @@ def evaluate(facts: HostFacts, limits: Thresholds | None = None) -> HostCheckRes
             else:
                 add(Check("docker_engine", True, False, "Docker Engine %s." % _version_text(facts.docker_version)))
     return result
-
-
-def _kernel(add: Any, name: str, value: int | None, minimum: int) -> None:
-    if value is None:
-        add(Check(name, False, False, "Could not read %s." % name))
-    elif value < minimum:
-        add(
-            Check(
-                name, False, True,
-                "%s is %d, below the %d SonarQube needs. Persist it in /etc/sysctl.d/99-securescan.conf and run "
-                "sudo sysctl --system." % (name, value, minimum),
-            )  # fmt: skip
-        )
-    else:
-        add(Check(name, True, True, "%s = %d." % (name, value)))
 
 
 # ================================================================================ reading the host
@@ -297,15 +261,13 @@ async def read_docker(
     return None, None
 
 
-async def collect_facts(settings: Settings | None = None, *, proc_root: Path = Path("/proc/sys")) -> HostFacts:
+async def collect_facts(settings: Settings | None = None) -> HostFacts:
     cfg = settings or get_settings()
     v2, controllers = read_cgroup()
     engine, api = await read_docker(cfg)
     return HostFacts(
         cgroup_v2=v2,
         cgroup_controllers=controllers,
-        max_map_count=parse_int_file(_read(proc_root / "vm" / "max_map_count")),
-        file_max=parse_int_file(_read(proc_root / "fs" / "file-max")),
         docker_version=engine,
         docker_api=api,
     )

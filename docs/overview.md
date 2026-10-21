@@ -2,7 +2,7 @@
 
 SecureScan is an on-premises platform that scans your applications and your vendors' applications for security weaknesses, keeps a permanent record of every scan, and produces SonaComstar-branded reports. It runs on one Ubuntu 24 machine under Docker Compose and signs users in with Microsoft Entra ID.
 
-> **Status (8 October 2026).** Milestones M0 to M11 are written: backend, portal, scanner catalogue, deployment files, runbooks and tests. None of it has been run yet; it is verified on Ubuntu 24 milestone by milestone (`docs/progress.md`). The M1 spikes, which confirm scanner flags and DefectDojo, SonarQube, Entra and GitHub behaviour, must run first.
+> **Status (8 October 2026).** Milestones M0 to M11 are written: backend, portal, scanner catalogue, deployment files, runbooks and tests. None of it has been run yet; it is verified on Ubuntu 24 milestone by milestone (`docs/progress.md`). The M1 spikes, which confirm scanner flags and DefectDojo, Entra and GitHub behaviour, must run first.
 
 ## What it does
 
@@ -15,16 +15,16 @@ SecureScan is an on-premises platform that scans your applications and your vend
 
 ## Features
 
-**Code scanning (SAST and dependencies).** Nine free tools, each started on demand and removed afterwards:
+**Code scanning (SAST and dependencies).** Free tools, each started on demand and removed afterwards, one at a time:
 
 | Tool | What it finds |
 | --- | --- |
 | Semgrep | Insecure code patterns in Java, C#, JavaScript, TypeScript, Python, HTML |
-| SonarQube Community Build | Bugs, vulnerabilities, code smells, quality gate |
 | SpotBugs with Find Security Bugs | Injection, XSS, deserialisation flaws in compiled Java |
 | Gitleaks | Hard-coded secrets in files and git history (secret values are masked) |
 | Syft and Grype | Software bill of materials and known-vulnerable packages |
-| OWASP Dependency-Check | Known-vulnerable Java and .NET dependencies, including JARs and DLLs |
+
+SonarQube and OWASP Dependency-Check were removed so the platform fits a 4 vCPU / 8 GB machine (`docs/decisions.md`, 2026-10-21).
 
 **Web scanning (DAST).** ZAP and Nuclei. Production targets get unauthenticated ZAP baseline scans only. Full scans, API scans, Nuclei and login profiles run only against targets tagged UAT. The platform enforces this; it cannot be overridden from the screen.
 
@@ -44,13 +44,11 @@ SecureScan is an on-premises platform that scans your applications and your vend
 
 ## What is always running
 
-Only DefectDojo, PostgreSQL, the portal gateway, the API and worker, and the Docker socket proxy. Scanners, the SonarQube server and the proxies start when needed and stop afterwards.
+Only DefectDojo, PostgreSQL, the portal gateway, the API and worker, and the Docker socket proxy. Scanners and the proxies start when needed and stop afterwards.
 
 ## Setup and deployment
 
-**Machine.** Ubuntu 24.04, 64-bit, cgroup v2. Recommended 16 vCPU, 64 GB RAM, 500 GB SSD (minimum 8 vCPU, 32 GB). Docker Engine 29+ with Compose 2.24+, Python 3.14 via `uv`, Node 24, `openssl`, `git`.
-
-**Host settings** (in `/etc/sysctl.d/99-securescan.conf`, then `sudo sysctl --system`): `vm.max_map_count=524288`, `fs.file-max=131072`.
+**Machine.** Ubuntu 24.04, 64-bit, cgroup v2. 4 vCPU, 8 GB RAM, 500 GB SSD; scans run one at a time. Docker Engine 29+ with Compose 2.24+, Python 3.14 via `uv`, Node 24, `openssl`, `git`.
 
 **Network.** Outbound HTTPS to GitHub, Microsoft Entra, Docker Hub, GHCR, quay.io and the scanner update sources (list in the plan, section 2.4). Two DNS names under one parent domain, for example `securescan.corp.example` and `dojo.securescan.corp.example`, and a TLS certificate covering both.
 
@@ -58,8 +56,7 @@ Only DefectDojo, PostgreSQL, the portal gateway, the API and worker, and the Doc
 
 - One Entra app registration with app roles `Admin` and `Analyst`, "assignment required" on, groups assigned. Steps are in `deploy/README.md`.
 - A GitHub App on the corporate organisation with Contents: read and Metadata: read, webhook off.
-- A free NVD API key for Dependency-Check, entered in Settings.
-- The SonaComstar logo files, when available. Until then a text wordmark is used.
+- The official SonaComstar vector logo, when available. The portal uses logo files traced from an existing image (`frontend/public/brand/`); replace them there.
 
 **Install and start.**
 
@@ -73,7 +70,7 @@ python3 scripts/dev.py pull-images
 python3 scripts/dev.py up
 ```
 
-Then open `https://<portal host>/`. First-time setup of DefectDojo and SonarQube is automatic. The production installation is `docs/install.md`; backups (`scripts/backup.sh`), the restore drill, upgrades, key rotation and the other routines are the runbooks in `docs/runbooks/`; the security controls and how to check them are `docs/security-checklist.md`.
+Then open `https://<portal host>/`. First-time setup of DefectDojo is automatic. The production installation is `docs/install.md`; backups (`scripts/backup.sh`), the restore drill, upgrades, key rotation and the other routines are the runbooks in `docs/runbooks/`; the security controls and how to check them are `docs/security-checklist.md`.
 
 ## Where to read more
 

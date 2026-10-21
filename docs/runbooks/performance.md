@@ -63,17 +63,11 @@ Record the decision, the before and after timings and the migration number in `d
 
 ## 4. PostgreSQL settings
 
-The `db` container starts with PostgreSQL's small default memory settings (it holds three databases on a machine with tens of GB). Set them once with `ALTER SYSTEM` (stored in the data directory, applied at the next restart) and restart the `db` container in a window:
-
-```
-sc exec -T db psql -U postgres -c "ALTER SYSTEM SET shared_buffers = '4GB'"
-sc exec -T db psql -U postgres -c "ALTER SYSTEM SET effective_cache_size = '16GB'"
-sc exec -T db psql -U postgres -c "ALTER SYSTEM SET work_mem = '32MB'"
-sc exec -T db psql -U postgres -c "ALTER SYSTEM SET maintenance_work_mem = '512MB'"
-sc restart db
-```
-
-Sensible values for the recommended 64 GB machine (the container is limited to 12 GB of memory in `deploy/compose.yaml`: `shared_buffers` plus `work_mem` times concurrent sorts must stay well inside it). `shm_size` of the container is 512 MB.
+The memory settings are command-line options in `deploy/postgres/entrypoint-ssl.sh`, sized for the 4 vCPU / 8 GB machine: `shared_buffers` 256 MB,
+`effective_cache_size` 768 MB, `work_mem` 4 MB, `maintenance_work_mem` 64 MB, inside a 1 GB container limit (`deploy/compose.yaml`; `shm_size` 256 MB).
+Command-line options win over `ALTER SYSTEM`, so change them in that script, raise the container's memory limit with them, and restart `db` in a window.
+On a larger machine, `shared_buffers` at a quarter of the container limit is a sensible start; keep `shared_buffers` plus `work_mem` times concurrent
+sorts well inside the limit.
 Autovacuum is on by default; after a bulk load run `ANALYZE` (the seeder does).
 
 ## 5. Growth and disk
@@ -84,6 +78,9 @@ Autovacuum is on by default; after a bulk load run `ANALYZE` (the seeder does).
 
 ## 6. Capacity steps (design, "Growing on one machine")
 
-1. Raise the concurrency caps (`SECURESCAN_WORKER_CONCURRENCY`, the `max_parallel` of a tool in `scanners/catalogue.yaml`, and the container limits in `deploy/compose.yaml`) while CPU and memory allow.
+1. On a machine larger than 4 vCPU / 8 GB, let scans run side by side: give the tools of `scanners/catalogue.yaml` their own locks again (remove
+   `lock: scanner`, keep `lock: scanner` on `zap` and `nuclei` or give them a shared `dast` lock and change `DAST_LOCK` in
+   `backend/securescan/domain/dast_rules.py`), raise `max_parallel`, the scanner limits and the ceilings in `backend/securescan/runner/profiles.py`, and the
+   container limits in `deploy/compose.yaml` and `deploy/defectdojo/override.yaml`. Record the change in `docs/decisions.md`.
 2. Add CPU, memory and disk to the machine.
 3. Move to a larger machine with the restore procedure (`docs/runbooks/restore.md`), which doubles as the migration path.

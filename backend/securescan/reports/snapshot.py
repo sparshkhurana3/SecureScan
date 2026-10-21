@@ -51,6 +51,7 @@ STATE_LABELS = {
     "closed": "Closed",
     "deleted": "Deleted in DefectDojo",
 }
+# SonarQube and Dependency-Check no longer run (docs/decisions.md, 2026-10-21); their labels stay for the history.
 TOOL_LABELS = {
     "semgrep": "Semgrep CE",
     "sonarqube": "SonarQube Community Build",
@@ -80,21 +81,21 @@ MAX_TRIAGED_ROWS = 500
 MAX_DELTA_ROWS = 100
 DEFAULT_DETAIL_LIMIT = 300
 
-# Design, "Known limits to state in every report". Keep this text identical to the design.
+# Design, "Known limits to state in every report", adjusted for the 4 vCPU / 8 GB sizing, which removed SonarQube
+# and Dependency-Check (docs/decisions.md, 2026-10-21). Update the design document to match.
 KNOWN_LIMITS = (
-    "Semgrep CE traces taint only within one function, and SonarQube Community Build has no "
-    "taint analysis. Find Security Bugs closes that gap for Java bytecode, the .NET analyzers "
-    "close it for C# once builds run, and for JavaScript, TypeScript and Python no free, "
-    "maintained tool traces taint across files.",
+    "Semgrep CE traces taint only within one function. Find Security Bugs closes that gap for Java "
+    "bytecode, the .NET analyzers close it for C# once builds run, and for JavaScript, TypeScript "
+    "and Python no free, maintained tool traces taint across files.",
     "Syft and Grype see only the dependencies declared in manifests and lock files when scanning "
     "source. A zip without lock files yields a thin result.",
-    "Dependency-Check identifies components by fuzzy matching to NVD entries and produces both "
-    "false positives and false negatives by its own account.",
+    "This installation runs neither SonarQube nor OWASP Dependency-Check: there is no code-quality "
+    "gate, and vulnerable dependencies are found by Grype alone, so JAR and DLL files shipped "
+    "without a manifest may be missed.",
     "Gitleaks is in maintenance mode: security patches only. Its author's successor, Betterleaks, "
     "replaces it once DefectDojo ships a parser for it. The swap is a configuration change.",
-    "Semgrep's rules and SonarQube's analyzers are free but not open source. Reports stay internal "
-    "by default, and no scanner output is fed to external AI services, which the Sonar licence "
-    "forbids.",
+    "Semgrep's rules are free but not open source. Reports stay internal by default, and no "
+    "scanner output is fed to external AI services.",
 )
 
 SONAR_MEASURE_LABELS = {
@@ -741,7 +742,7 @@ def _code_quality(jobs: Sequence[Any]) -> CodeQuality:
     """
     job = next((j for j in jobs if tool_key(str(_g(j, "tool", ""))) == "sonarqube"), None)
     if job is None:
-        return CodeQuality(available=False, note="SonarQube did not run for this scan.")
+        return CodeQuality(available=False, note="SonarQube is not part of this installation; code quality is not measured.")
     options = _g(job, "options") or {}
     if not isinstance(options, dict):
         options = {}

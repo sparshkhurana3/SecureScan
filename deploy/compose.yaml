@@ -1,7 +1,11 @@
 name: securescan
 
-# Always-on services only. Scanners, the SonarQube server, egress proxies and updaters are
-# started on demand by the worker (see docs/implementation-plan.md section 1.2).
+# Always-on services only. Scanners, egress proxies and updaters are started on demand by the worker
+# (see docs/implementation-plan.md section 1.2).
+#
+# Sized for one machine with 4 vCPU and 8 GB RAM (docs/decisions.md, 2026-10-21). The memory limits of the
+# always-on set, DefectDojo's included (defectdojo/override.yaml), add up to about 5 GB; one scanner container
+# at a time (catalogue lock `scanner`) takes at most 3 GB. Typical use is well below the limits.
 # Run through `python scripts/dev.py up`, which passes --env-file deploy/.env --env-file deploy/images.env.
 
 # DefectDojo (nginx, uwsgi, celerybeat, celeryworker, initializer, valkey) comes from the vendored upstream
@@ -70,7 +74,6 @@ services:
       - postgres_superuser_password
       - securescan_db_password
       - defectdojo_db_password
-      - sonarqube_db_password
       - pg_server_cert
       - pg_server_key
     volumes:
@@ -91,12 +94,12 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     security_opt: ["no-new-privileges:true"]
-    shm_size: 512mb
+    shm_size: 256mb
     pids_limit: 1024
     stop_grace_period: 120s
     deploy:
       resources:
-        limits: { cpus: "6", memory: 12g }
+        limits: { cpus: "1.5", memory: 1g, pids: 1024 }  # shared_buffers and the other settings: postgres/entrypoint-ssl.sh
 
   migrate:
     <<: [*backend, *hardened, *backend-tmpfs]
@@ -115,7 +118,7 @@ services:
     pids_limit: 256
     deploy:
       resources:
-        limits: { cpus: "1", memory: 1g }
+        limits: { cpus: "0.5", memory: 512m, pids: 256 }
 
   api:
     <<: [*backend, *hardened, *backend-tmpfs]
@@ -142,7 +145,7 @@ services:
     pids_limit: 512
     deploy:
       resources:
-        limits: { cpus: "2", memory: 3g }
+        limits: { cpus: "1", memory: 768m, pids: 512 }  # includes the sandboxed test render of an uploaded template
 
   worker:
     <<: [*backend, *hardened, *backend-tmpfs]
@@ -151,7 +154,7 @@ services:
     pids_limit: 1024
     deploy:
       resources:
-        limits: { cpus: "3", memory: 6g }
+        limits: { cpus: "1", memory: 1g, pids: 1024 }  # git clones, image intake and report rendering run in here
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9100/metrics')"]
       interval: 30s
@@ -173,9 +176,6 @@ services:
       # refers to them by their lock name. Each new tool adds its line here (M8, M9).
       SECURESCAN_IMAGE_SEMGREP: ${IMG_SEMGREP:?run pin-images first}
       SECURESCAN_IMAGE_GITLEAKS: ${IMG_GITLEAKS:?run pin-images first}
-      # SonarQube on demand: the server's database password and the admin password the worker sets and uses.
-      SECURESCAN_SONARQUBE_DB_PASSWORD_FILE: /run/secrets/sonarqube_db_password
-      SECURESCAN_SONARQUBE_ADMIN_PASSWORD_FILE: /run/secrets/sonarqube_admin_password
       # Deploy-key (SSH) clones of vendor repositories verify the host against this file (deploy/known_hosts).
       SECURESCAN_SSH_KNOWN_HOSTS_FILE: /app/deploy/known_hosts
     secrets:
@@ -183,8 +183,6 @@ services:
       - tls_ca
       - oidc_client_secret
       - securescan_master_key
-      - sonarqube_db_password
-      - sonarqube_admin_password
     volumes:
       - securescan_data:/var/lib/securescan
       - artifacts:/var/lib/securescan/artifacts
@@ -212,7 +210,7 @@ services:
     pids_limit: 256
     deploy:
       resources:
-        limits: { cpus: "1", memory: 1g }
+        limits: { cpus: "0.5", memory: 512m, pids: 256 }
     secrets: [securescan_db_password, tls_ca, securescan_master_key, dojo_init_admin_password]
     depends_on:
       db: { condition: service_healthy }
@@ -254,7 +252,7 @@ services:
     pids_limit: 256
     deploy:
       resources:
-        limits: { cpus: "1", memory: 512m }
+        limits: { cpus: "0.5", memory: 192m, pids: 256 }
 
   # Allowlist: deploy/socket-proxy/args.env (written in M3 from the Docker SDK request shapes; spike S2 confirms it).
   socket-proxy:
@@ -276,20 +274,17 @@ services:
     pids_limit: 64
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 128m }
+        limits: { cpus: "0.25", memory: 64m, pids: 64 }
 
-# `sonarqube`, `dast` and `egress` are used only by containers the worker starts on demand, and Compose does not create
+# `dast` and `egress` are used only by containers the worker starts on demand, and Compose does not create
 # a network that no service joins. They are therefore external: `python scripts/dev.py up` creates them first
-# (`dev.py networks`). Without dev.py run: docker network create --internal securescan_sonarqube (and securescan_dast),
+# (`dev.py networks`). Without dev.py run: docker network create --internal securescan_dast,
 # docker network create securescan_egress.
 networks:
   frontend: {}
   backend: {}
   docker:
     internal: true
-  sonarqube:
-    name: securescan_sonarqube
-    external: true
   dast:
     name: securescan_dast
     external: true
@@ -303,18 +298,12 @@ volumes:
   artifacts: { name: securescan_artifacts }
   content: { name: securescan_content }
   grype_db: { name: securescan_grype_db }
-  odc_data: { name: securescan_odc_data }
-  sonarqube_data: { name: securescan_sonarqube_data }
-  sonarqube_extensions: { name: securescan_sonarqube_extensions }
-  sonarqube_logs: { name: securescan_sonarqube_logs }
 
 secrets:
   postgres_superuser_password: { file: ./secrets/postgres_superuser_password }
   securescan_db_password: { file: ./secrets/securescan_db_password }
   defectdojo_db_password: { file: ./secrets/defectdojo_db_password }
   dojo_init_admin_password: { file: ./secrets/dd_admin_password }
-  sonarqube_db_password: { file: ./secrets/sonarqube_db_password }
-  sonarqube_admin_password: { file: ./secrets/sonarqube_admin_password }
   securescan_master_key: { file: ./secrets/securescan_master_key }
   oidc_client_secret: { file: ./secrets/oidc_client_secret }
   tls_cert: { file: ./secrets/tls/server.crt }

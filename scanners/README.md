@@ -5,7 +5,7 @@
 | Path | What |
 | --- | --- |
 | `catalogue.yaml` (+ `catalogue.d/*.yaml`) | the **only** source of container specifications: image, user, network, mounts, tmpfs, limits, command, allowed optional switches, outputs, exit-code mapping, the DefectDojo scan type. Nothing about a container is built from user input |
-| `profiles/*.yaml` | scan profiles (which tools run together, per-tool limits, verdict thresholds) and per-tool settings files (`semgrep.yaml`, `dependency-check.yaml`) |
+| `profiles/*.yaml` | scan profiles (which tools run together, per-tool limits, verdict thresholds) and per-tool settings files (`semgrep.yaml`) |
 | `regression/` | the regression suite: expected findings of the planted apps, runner configuration, the broken-rule drill (`regression/README.md`) |
 | `spotbugs/` | the Dockerfile of the self-built SpotBugs + Find Security Bugs image |
 | `gitleaks.toml`, `dast/` | tool configuration read through the `config` mount |
@@ -42,7 +42,7 @@ database schema) is a commit instead:
 2. Run the tool by hand on the planted apps from the new image. Compare flags with the entry (`--help`), exit codes, output file name and format. Fix the entry and the builder where it changed; record each difference in `docs/decisions.md`.
 3. **Refresh the fixture report** `backend/tests/fixtures/reports/<file>` from the new image and run the contract test (`python3 scripts/dev.py test contract`): the report must still import into DefectDojo with the expected severities. A format DefectDojo's parser does not understand stops the bump.
 4. Run the regression suite for the tool (`sc exec worker python -m securescan.domain.regression run --kind image --tool <key>`); fix expectations only with a commit message that says why.
-5. SonarQube follows the December rule across calendar years (`docs/runbooks/sonarqube-upgrade.md`); Grype needs a bump at least quarterly because Anchore retires old database schemas; the self-built SpotBugs image is rebuilt from new SpotBugs and Find Security Bugs releases (`scanners/spotbugs/README.md`).
+5. Grype needs a bump at least quarterly because Anchore retires old database schemas; the self-built SpotBugs image is rebuilt from new SpotBugs and Find Security Bugs releases (`scanners/spotbugs/README.md`).
 6. Release as usual (`docs/runbooks/release-upgrade.md`); retire any approved overlay row that the new lock file now contains.
 
 ## Remove a tool

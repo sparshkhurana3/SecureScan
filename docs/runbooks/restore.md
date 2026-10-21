@@ -3,9 +3,9 @@
 Targets (design): recovery point **24 hours** (the nightly backup), recovery time **4 hours**. This runbook is both the emergency procedure (the machine is lost) and the drill that proves it
 works: run it **every quarter on a spare machine**, and once before go-live. A backup that was never restored is a hope, not a backup.
 
-What a backup set holds (`scripts/backup.sh`): the three PostgreSQL databases (`securescan`, `defectdojo`, `sonarqube`) in custom format, the roles, the `artifacts`, `defectdojo_media` and `data`
+What a backup set holds (`scripts/backup.sh`): the two PostgreSQL databases (`securescan`, `defectdojo`) in custom format, the roles, the `artifacts`, `defectdojo_media` and `data`
 volumes (data without workspaces), a listing of the content volume, the configuration (`deploy/.env`, `images.env`, `images.lock.yaml`) and, unless switched off, `deploy/secrets` without the age key. Every part is
-encrypted with age. **What a backup does not hold:** the rules, templates and vulnerability databases (the updaters rebuild them), SonarQube's search index (it rebuilds), the scanner images (pulled again).
+encrypted with age. **What a backup does not hold:** the rules, templates and vulnerability databases (the updaters rebuild them), the scanner images (pulled again).
 
 You need three things that are *not* on the lost machine: the backup set (the off-machine target), the **age private key** (the vault), and a Linux machine prepared as in `docs/install.md` sections 2 and 3.
 
@@ -55,8 +55,8 @@ If it fails: the message names the step. Fix the cause, remove the half-restored
 2. Historical data: the scans and findings of the last day before the backup are there; the counts match what you recorded before (`psql "select count(*) from finding_history"` on the lost machine's last report, or the previous drill).
 3. **Open a report that existed before the backup** (Historical data -> a scan -> its report, and download the PDF). This proves the artifacts volume and the database agree.
 4. Open DefectDojo through the portal: products and findings are there; sign in with an existing DefectDojo account.
-5. Settings -> System health: no red item. Settings -> GitHub connection -> Test passes (the App key is in the restored database or secrets); Settings -> credentials: the NVD key is listed.
-6. Scanner content is empty after a restore: wait for the daily updates (Grype 07:30 UTC, NVD 03:00 UTC; Dependency-Check scans wait for the first NVD update, which takes hours) and the weekly rules and templates update, or start them (`content-update-failed.md`).
+5. Settings -> System health: no red item. Settings -> GitHub connection -> Test passes (the App key is in the restored database or secrets).
+6. Scanner content is empty after a restore: wait for the daily update (Grype 07:30 UTC) and the weekly rules and templates update, or start them (`content-update-failed.md`).
 7. Run a scan of `python-planted`: it must reach `imported` and produce a report.
 8. `bash scripts/backup.sh` on the restored machine: a new set, copied off, verified.
 
@@ -71,7 +71,7 @@ If it fails: the message names the step. Fix the cause, remove the half-restored
 
 ```
 # one database (stop what uses it first; the stack stays up otherwise)
-age -d -i /srv/restore/age-key.txt /srv/restore/<set>/db-sonarqube.dump.age | sc exec -T db pg_restore -U postgres -d sonarqube --clean --if-exists --single-transaction --exit-on-error --no-password
+age -d -i /srv/restore/age-key.txt /srv/restore/<set>/db-securescan.dump.age | sc exec -T db pg_restore -U postgres -d securescan --clean --if-exists --single-transaction --exit-on-error --no-password
 # one volume (an empty or freshly created volume; example: the artifacts)
 age -d -i /srv/restore/age-key.txt /srv/restore/<set>/artifacts.tar.age | docker run --rm -i --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER -v securescan_artifacts:/v --entrypoint tar "$(grep '^IMG_PYTHON=' deploy/images.env | cut -d= -f2-)" --numeric-owner -C /v -xf -
 ```

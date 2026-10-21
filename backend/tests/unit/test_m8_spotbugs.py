@@ -135,7 +135,7 @@ async def test_prepare_records_what_it_found_and_the_command_lists_it() -> None:
     assert any("3 archive(s) and 2 class directories with 2 libraries" in note for note in ctx.coverage_notes)
     command = BUILDER.build_command(ctx)
     plan = (
-        "-textui -pluginList /opt/findsecbugs/findsecbugs-plugin.jar -effort:max -low -maxHeap 2048 "
+        "-textui -pluginList /opt/findsecbugs/findsecbugs-plugin.jar -effort:max -low -maxHeap 1792 "
         "-xml:withMessages=/out/spotbugs.xml"
     ).split()
     assert command[: len(plan)] == plan

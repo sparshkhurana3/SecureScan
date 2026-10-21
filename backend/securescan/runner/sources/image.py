@@ -14,7 +14,7 @@ which the Syft/Grype tool module calls when the tool registry loads (before the 
      registry credential (``CredentialKind.REGISTRY``, ``user:password`` or JSON ``{"username", "password"}``)
      becomes a 0600 ``auth.json`` in the job's ``config`` directory (``REGISTRY_AUTH_FILE``) for this container only
      and is deleted afterwards. Nothing secret is on a command line.
-   The archive ends up in ``config/image.tar`` (not in ``src``, so that Gitleaks, Semgrep and Dependency-Check do not
+   The archive ends up in ``config/image.tar`` (not in ``src``, so that Gitleaks and Semgrep do not
    scan the compressed layers a second time); Syft reads it as ``docker-archive:/config/image.tar``.
 2. **Extract the root filesystem** into ``src/rootfs`` for the file-based tools (``extract_image_archive``):
    layers are applied in order; ``.wh.<name>`` whiteouts delete lower-layer paths and ``.wh..wh..opq`` empties a

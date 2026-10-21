@@ -93,8 +93,6 @@ def normalise_user(user: str) -> str:
 def docker_network(settings: Settings, logical: str) -> str:
     if logical == "none":
         return "none"
-    if logical == "sonarqube":
-        return settings.network_sonarqube
     if logical == "dast":
         return settings.network_dast
     raise ToolPreparationError(f"unknown network {logical!r} in the catalogue")

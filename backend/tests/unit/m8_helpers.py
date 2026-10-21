@@ -144,7 +144,7 @@ def ctx_for(
     """``make_ctx`` plus an application and a version, as the builders that name the project need them."""
     ctx = make_ctx(tool, kind=kind, options=options, **kwargs)
     ctx.application = types.SimpleNamespace(name="Shop", type=app_type)  # type: ignore[assignment]
-    ctx.version = types.SimpleNamespace(id=uuid.uuid4(), label="main", sonar_project_key=None)  # type: ignore[assignment]
+    ctx.version = types.SimpleNamespace(id=uuid.uuid4(), label="main")  # type: ignore[assignment]
     return ctx
 
 

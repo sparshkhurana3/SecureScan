@@ -51,6 +51,7 @@ class ApplicationVersion(Base):
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     dd_engagement_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    # Unused since SonarQube was removed (docs/decisions.md, 2026-10-21); the column stays for old rows.
     sonar_project_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(

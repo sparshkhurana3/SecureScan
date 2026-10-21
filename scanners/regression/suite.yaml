@@ -17,7 +17,7 @@ kinds:
     tools: [semgrep]
   image:
     apps: [java-planted, js-planted, python-planted, csharp-planted]
-    tools: [semgrep, gitleaks, grype, dependency-check, spotbugs, sonarqube]
+    tools: [semgrep, gitleaks, grype, spotbugs]
   external:
     apps: [juice-shop, webgoat]
     tools: [semgrep]

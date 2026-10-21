@@ -1,4 +1,4 @@
-"""Image updates: tag series, the SonarQube December rule, planning, storing, approving, the overlay."""
+"""Image updates: tag series, planning, storing, approving, the overlay."""
 
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ from securescan.domain.image_updates import (
     lock_yaml_line,
     newer_tags,
     parse_lock_file,
-    parse_sonar_tag,
     parse_tag,
     plan_image,
     primary_tool_by_lock,
@@ -35,7 +34,6 @@ from securescan.domain.image_updates import (
     reject_image_version,
     run_proposals,
     select_candidate,
-    sonarqube_candidate_allowed,
     store_proposals,
     tool_for_lock,
 )
@@ -85,52 +83,10 @@ def test_two_part_version_tags_compare_part_by_part() -> None:
     assert newer_tags("12.2.0.4256_8.1.0", tags)[0] == "12.3.0.4300_8.2.0"
 
 
-# --------------------------------------------------------------------------- the SonarQube December rule
-def test_sonarqube_same_year_is_always_allowed() -> None:
-    assert sonarqube_candidate_allowed("26.9.0.129388-community", "26.10.0.130000-community")
-    assert sonarqube_candidate_allowed("26.1.0.100000-community", "26.12.0.140000-community")
-    assert sonarqube_candidate_allowed("26.9.0.129388-community", "26.9.1.129999-community")
-
-
-def test_sonarqube_never_goes_backwards_or_stays() -> None:
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "26.9.0.129388-community")
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "26.8.0.120000-community")
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "25.12.0.110000-community")
-
-
-def test_sonarqube_crosses_the_year_only_from_the_december_build() -> None:
-    # the rule: a candidate from a later calendar year only when the current version is the earlier year's December build
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "27.1.0.150000-community")
-    assert not sonarqube_candidate_allowed("26.11.0.139000-community", "27.1.0.150000-community")
-    assert sonarqube_candidate_allowed("26.12.0.140000-community", "27.1.0.150000-community")
-    assert sonarqube_candidate_allowed("26.12.0.140000-community", "27.12.0.160000-community")
-
-
-def test_sonarqube_never_skips_a_whole_year() -> None:
-    assert not sonarqube_candidate_allowed("26.12.0.140000-community", "28.1.0.170000-community")
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "28.1.0.170000-community")
-
-
-def test_sonarqube_rejects_tags_that_are_not_community_builds() -> None:
-    assert parse_sonar_tag("26.9.0.129388-community") is not None
-    assert parse_sonar_tag("26.9.0.129388") is None
-    assert parse_sonar_tag("26.9.0.129388-enterprise") is None
-    assert not sonarqube_candidate_allowed("26.9.0.129388-community", "26.10.0.130000")
-
-
-def test_select_candidate_applies_the_december_rule_to_the_server_image() -> None:
-    tags = [
-        "26.9.0.129388-community", "26.10.0.130000-community", "26.12.0.140000-community",
-        "27.1.0.150000-community", "27.2.0.151000-community", "community", "lts-community",
-    ]  # fmt: skip
-    # from September: the year's December build is the newest allowed, 27.x waits
-    assert select_candidate("SONARQUBE", "sonarqube-server", "26.9.0.129388-community", tags) == "26.12.0.140000-community"
-    # from the December build: the next year opens, the newest of 27.x is offered
-    assert select_candidate("SONARQUBE", "sonarqube-server", "26.12.0.140000-community", tags) == "27.2.0.151000-community"
-    # a tool that is not the server has no such rule
-    assert select_candidate("SYFT", "syft", "v1.0.0", ["v2.0.0"]) == "v2.0.0"
-    # nothing newer
-    assert select_candidate("SONARQUBE", "sonarqube-server", "27.2.0.151000-community", tags) is None
+def test_select_candidate_offers_the_newest_tag_of_the_series() -> None:
+    assert select_candidate("SYFT", "syft", "v1.0.0", ["v2.0.0", "v1.5.0", "latest"]) == "v2.0.0"
+    assert select_candidate("SYFT", "syft", "v2.0.0", ["v1.5.0"]) is None
+    assert select_candidate("POSTGRES", "postgres", "18.6", ["18.7", "19.0"]) == "18.7"  # majors need a runbook
 
 
 # --------------------------------------------------------------------------- lock file
@@ -160,7 +116,8 @@ def test_load_lock_images_finds_the_file_next_to_the_scanners_directory(tmp_path
 def test_the_real_lock_file_parses_and_names_every_runtime_lock() -> None:
     images = load_lock_images(REPO_SCANNERS)
     names = {i.name for i in images}
-    assert {"SEMGREP", "GITLEAKS", "SONARQUBE", "SQUID", "POSTGRES"} <= names
+    assert {"SEMGREP", "GITLEAKS", "SPOTBUGS_FSB", "SQUID", "POSTGRES"} <= names
+    assert not {"SONARQUBE", "SONAR_SCANNER", "DEPENDENCY_CHECK"} & names, "removed for the 4 vCPU / 8 GB sizing"
     hosts = egress_hosts_for(images)
     assert {"registry-1.docker.io", "auth.docker.io", "ghcr.io", "quay.io"} <= hosts
 
@@ -171,13 +128,12 @@ def test_the_primary_tool_of_a_shared_lock_is_the_one_that_scans() -> None:
     primary = primary_tool_by_lock(load_catalogue_from(REPO_SCANNERS))
     assert primary["SEMGREP"] == "semgrep" and primary["GITLEAKS"] == "gitleaks"
     assert primary["GRYPE"] == "syft-grype"  # not grype-db-update or grype-db-status, which share the image
-    assert primary["DEPENDENCY_CHECK"] == "dependency-check"  # not odc-update
-    assert primary["SONARQUBE"] == "sonarqube-server" and primary["SONAR_SCANNER"] == "sonarqube"
+    assert primary["NUCLEI"] == "nuclei"  # not nuclei-templates-update or nuclei-templates-validate
     assert primary_tool_by_lock({}) == {}
 
 
 def test_tool_for_lock_prefers_the_catalogue_tool() -> None:
-    assert tool_for_lock("SONARQUBE", {"SONARQUBE": "sonarqube-server"}) == "sonarqube-server"
+    assert tool_for_lock("GRYPE", {"GRYPE": "syft-grype"}) == "syft-grype"
     assert tool_for_lock("SQUID", {}) == "squid"  # runner/egress.py looks the proxy image up under this name
 
 
@@ -252,22 +208,6 @@ async def test_plan_notes_a_vanished_tag() -> None:
     assert outcome.proposals == [] and "no longer exists" in outcome.notes[0]
 
 
-async def test_plan_sonarqube_waits_for_december() -> None:
-    lock = LockImage("SONARQUBE", "sonarqube", "26.9.0.129388-community", D1)
-    tags = ["26.9.0.129388-community", "27.1.0.150000-community"]
-    registry = FakeRegistry({"26.9.0.129388-community": D1, "27.1.0.150000-community": D2}, tags=tags)
-    outcome = await plan_image(
-        lock, Current(lock.tag, D1, False), tool="sonarqube-server", scope=SCOPE_RUNTIME, registry=registry
-    )
-    assert outcome.proposals == []  # 27.1 is a later calendar year and 26.9 is not the December build
-    registry = FakeRegistry({"26.12.0.140000-community": D1, "27.1.0.150000-community": D2}, tags=tags)
-    december = LockImage("SONARQUBE", "sonarqube", "26.12.0.140000-community", D1)
-    outcome = await plan_image(
-        december, Current(december.tag, D1, False), tool="sonarqube-server", scope=SCOPE_RUNTIME, registry=registry
-    )
-    assert [p.tag for p in outcome.proposals] == ["27.1.0.150000-community"]
-
-
 def test_current_for_prefers_the_active_override() -> None:
     lock = LockImage("SYFT", "anchore/syft", "v1.54.0", D1)
     row = make_row(tool="syft", tag="v1.55.0", digest=D2, active=True, approved=True)
@@ -277,10 +217,10 @@ def test_current_for_prefers_the_active_override() -> None:
 
 def test_regression_job_for_maps_scanners_and_skips_the_rest() -> None:
     assert regression_job_for("syft-grype", SCOPE_RUNTIME) == "syft-grype"
-    assert regression_job_for("sonarqube", SCOPE_RUNTIME) == "sonarqube"
+    assert regression_job_for("spotbugs", SCOPE_RUNTIME) == "spotbugs"
     assert regression_job_for("semgrep", SCOPE_RUNTIME) == "semgrep"
     # images the job does not record cannot be gated: they are skipped and need an acknowledgement
-    for ungated in ("syft", "sonarqube-server", "squid", "skopeo", "zap", "nuclei"):
+    for ungated in ("syft", "squid", "skopeo", "zap", "nuclei"):
         assert regression_job_for(ungated, SCOPE_RUNTIME) is None, ungated
     assert regression_job_for("semgrep", SCOPE_RELEASE) is None
 
@@ -407,26 +347,6 @@ def test_check_approvable_refuses_platform_images_and_decided_rows() -> None:
         with pytest.raises(Conflict) as info:
             check_approvable(row, acknowledge_skipped=True)
         assert info.value.code == "image.not_pending"
-
-
-def test_check_approvable_enforces_the_december_rule_on_sonarqube_rows() -> None:
-    row = make_row(
-        tool="sonarqube-server", image="sonarqube", tag="27.1.0.150000-community",
-        regression_detail={"scope": "runtime", "previous_tag": "26.9.0.129388-community"},
-    )  # fmt: skip
-    with pytest.raises(Conflict) as info:
-        check_approvable(row, acknowledge_skipped=False)
-    assert info.value.code == "image.december_rule"
-    ok = make_row(
-        tool="sonarqube-server", image="sonarqube", tag="27.1.0.150000-community",
-        regression_detail={"scope": "runtime", "previous_tag": "26.12.0.140000-community"},
-    )  # fmt: skip
-    check_approvable(ok, acknowledge_skipped=False)
-    rebuild = make_row(
-        tool="sonarqube-server", image="sonarqube", tag="26.9.0.129388-community",
-        regression_detail={"scope": "runtime", "previous_tag": "26.9.0.129388-community"},
-    )  # fmt: skip
-    check_approvable(rebuild, acknowledge_skipped=False)
 
 
 async def test_approve_activates_the_row_and_replaces_the_previous_one() -> None:

@@ -16,7 +16,6 @@ This directory of the repository holds only the pins and notes. The content itse
 | `nuclei-templates-<yyyymmdd>/` | weekly templates update | nobody directly | Output of `nuclei -ut -ud`, kept for the last `SECURESCAN_CONTENT_KEEP_VERSIONS` versions. |
 | `nuclei-templates` | weekly templates update | Nuclei scans (M9 mounts the resolved directory) | Symlink to the active dated directory. |
 | `grype-db/` | daily Grype update (07:30 UTC, after Anchore's 06:00 build) | Grype scans | The only writer is the updater container; scans mount it read-only when `SECURESCAN_GRYPE_DB_READ_ONLY=true`. |
-| `odc-data/` | daily Dependency-Check update (03:00 UTC) | Dependency-Check scans | H2 database of the NVD data. Dependency-Check scans are blocked until the first update succeeded. |
 
 The directories under the content root are world-writable on purpose (mode 0777, created by the worker): the updater and
 scanner containers run as uid 1000 with all capabilities dropped.
@@ -53,8 +52,6 @@ The first installation (no active version yet) is promoted without the gate, bec
 
 ## What an Admin does
 
-* Sets the NVD API key once (`PUT /api/v1/content/nvd-key`, or `SECURESCAN_NVD_API_KEY_FILE`). Without a key the NVD update is
-  skipped with a warning, unless `SECURESCAN_NVD_DATAFEED_URL` names a mirror.
 * Starts an update by hand from Settings, Content (`POST /api/v1/content-versions/updates`) after the first installation or after
   a failed run. The worker also queues the first update of every empty feed at start-up (`SECURESCAN_CONTENT_BOOTSTRAP`).
-* Reviews the feed-age alerts: databases older than 7 days, rules and templates older than 30 days.
+* Reviews the feed-age alerts: the Grype database older than 7 days, rules and templates older than 30 days.

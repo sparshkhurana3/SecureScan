@@ -1,4 +1,4 @@
-"""Entry point: ``python -m securescan <api|worker|migrate|dojo-init|sonar-init>``.
+"""Entry point: ``python -m securescan <api|worker|migrate|dojo-init>``.
 
 Each command except ``api`` is ``<module>:run`` returning an exit code. A command whose module does
 not exist yet (later milestones) prints ``<command>: not implemented yet`` and returns 0.
@@ -19,7 +19,6 @@ DISPATCH: dict[str, tuple[str, str]] = {
     "migrate": ("securescan.db.migrate", "run"),
     "worker": ("securescan.jobs.worker", "run"),
     "dojo-init": ("securescan.integrations.defectdojo.init", "run"),
-    "sonar-init": ("securescan.integrations.sonarqube.init", "run"),
 }
 COMMANDS = ["api", *DISPATCH]
 

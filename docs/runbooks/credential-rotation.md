@@ -18,8 +18,8 @@ Shorthand `sc`, `psql`: `docs/install.md`.
 | GitHub App key | yearly | `github-app-key-rotation.md` |
 | Master key (`securescan_master_key`) | every two years, and on suspicion | section 2 |
 | Database passwords | yearly, and on suspicion | section 3 |
-| DefectDojo break-glass (`dd_admin_password`), SonarQube admin | yearly; after every use | section 4 |
-| Vendor tokens, deploy keys, NVD key, DAST login profiles | per their expiry (`SecureScanCredentialsExpiring` alerts 14 days ahead) | Settings -> credentials: add the new one, then revoke the old one |
+| DefectDojo break-glass (`dd_admin_password`) | yearly; after every use | section 4 |
+| Vendor tokens, deploy keys, DAST login profiles | per their expiry (`SecureScanCredentialsExpiring` alerts 14 days ahead) | Settings -> credentials: add the new one, then revoke the old one |
 | age backup key | when a person with access leaves | section 5 |
 
 ## 1. Entra client secret
@@ -95,11 +95,11 @@ PY
 
 **Step 7.** Put the new key in the vault; keep the old one there **as long as backups made with it exist** (those sets contain the old key inside their `secrets.tar.age`, so a restore still works, but keep the copy anyway).
 
-If the master key is **lost** and no copy exists, every stored credential (GitHub App key in the database, deploy keys, vendor tokens, DAST logins, NVD key, DefectDojo tokens) is unreadable: restore the key from a backup set's `secrets.tar.age` (`docs/runbooks/restore.md`), or enter the credentials again in Settings and run `sc up -d dojo-init` to mint the DefectDojo tokens.
+If the master key is **lost** and no copy exists, every stored credential (GitHub App key in the database, deploy keys, vendor tokens, DAST logins, DefectDojo tokens) is unreadable: restore the key from a backup set's `secrets.tar.age` (`docs/runbooks/restore.md`), or enter the credentials again in Settings and run `sc up -d dojo-init` to mint the DefectDojo tokens.
 
 ## 3. Database passwords
 
-Three roles: `securescan`, `defectdojo`, `sonarqube` (secrets `securescan_db_password`, `defectdojo_db_password`, `sonarqube_db_password`, and `dd_database_url`, which contains DefectDojo's password and must be rebuilt).
+Two roles: `securescan`, `defectdojo` (secrets `securescan_db_password`, `defectdojo_db_password`, and `dd_database_url`, which contains DefectDojo's password and must be rebuilt).
 
 1. Generate: `python3 -c "import secrets; print(secrets.token_hex(24), end='')"`.
 2. Change the role, then the file, then restart the users of that role (example for SecureScan):
@@ -110,14 +110,12 @@ Three roles: `securescan`, `defectdojo`, `sonarqube` (secrets `securescan_db_pas
    sc up -d --force-recreate migrate api worker dojo-init
    ```
    For DefectDojo: also rebuild `deploy/secrets/dd_database_url` (`python3 -c "import urllib.parse as p; print('postgresql://defectdojo:%s@db:5432/defectdojo?sslmode=verify-full&sslrootcert=/run/secrets/tls_ca' % p.quote('<new>', safe=''), end='')"`, written with `tee`) and `sc restart uwsgi celeryworker celerybeat initializer`.
-   SonarQube reads its password when the worker creates the container: `docker rm -f sonarqube` (no scan running).
 3. The `ALTER ROLE` statement contains the password; clear the shell history of that session (`history -c`), or use `\password securescan` in an interactive `psql` instead.
 4. `postgres_superuser_password` is used only by the `db` container and the backup (through the local socket, no password): change it by `ALTER ROLE postgres PASSWORD ...`, update the file, `sc up -d --force-recreate db` (a short outage).
 
 ## 4. Break-glass accounts
 
 - **DefectDojo `admin`**: sign in through the gateway, change the password in DefectDojo (profile), write the new value to `deploy/secrets/dd_admin_password` and to the vault, `sc up -d --force-recreate dojo-init`. Every use raises `SecureScanBreakGlassLogin`.
-- **SonarQube admin**: stored as `sonarqube_admin_password`; `sonar-init` set it on first start. Change it in SonarQube's account page while the server runs, update the file.
 - If someone used a break-glass account without a reason, treat it as an incident: rotate it, read the audit log and the tool's own log for that time.
 
 ## 5. The age backup key

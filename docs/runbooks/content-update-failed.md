@@ -1,12 +1,12 @@
 # Runbook: a content update failed, and rollback
 
-"Content" is what scanners read besides their code: the Semgrep rules, the Nuclei templates, the Grype vulnerability database and the Dependency-Check (NVD) data.
+"Content" is what scanners read besides their code: the Semgrep rules, the Nuclei templates and the Grype vulnerability database.
 Use this runbook when `SecureScanVulnerabilityDatabaseStale` or `SecureScanRulesOrTemplatesStale` fires, when the failure rate of a tool jumps right after an update
 (`SecureScanToolFailureRate`), or when scans report fewer findings than before.
 
 How it is meant to work (design, "Updates over the internet"): the weekly updater (Saturday 03:00 UTC) fetches new rules and templates, runs the **regression suite**
 (`scanners/regression/`), and only then switches the `semgrep/rules` and `nuclei-templates` symlinks and records a `content_versions` row. On failure it keeps the previous
-version and raises the alert metric. The Grype and NVD databases carry data, not logic, so they update daily without a gate.
+version and raises the alert metric. The Grype database carries data, not logic, so it updates daily without a gate.
 
 Shorthand `sc`, `psql`: `docs/install.md`.
 
@@ -17,22 +17,20 @@ psql "select feed, version, active, regression_result, fetched_at, built_at from
 sc logs --since 24h worker 2>&1 | grep -i -E 'update|regression|content'
 ```
 
-Settings -> scanner health shows the age of every feed (limits: 7 days for the databases, 30 days for rules and templates).
+Settings -> scanner health shows the age of every feed (limits: 7 days for the database, 30 days for rules and templates).
 
 | You see | Meaning | Section |
 | --- | --- | --- |
-| no new row for the feed, errors about a host | the download failed (egress, DNS, GitHub or NVD outage) | 2 |
+| no new row for the feed, errors about a host | the download failed (egress, DNS or GitHub outage) | 2 |
 | a new row with `regression_result = failed`, `active = false` | the new content lost a verified finding; the previous version stays active | 3 |
 | a new row `active = true` and scans behave badly | the regression suite did not cover the problem | 4 |
 | Grype jobs fail with a database error | the database schema is newer than the Grype image | 5 |
-| Dependency-Check scans are blocked | the first NVD update has not succeeded yet | 2 |
 
 ## 2. A download failed
 
 - Hosts the updaters may reach: `SECURESCAN_EGRESS_ALLOW_HOSTS_UPDATERS` (default list in `docs/install.md`). A new host needed by an upstream change must be added there and the egress proxy recreated (`docker rm -f securescan-egress`).
 - Test from the machine: `bash scripts/check_host.sh --network`.
-- NVD: check the API key in Settings (credentials; it expires or may be rate-limited); NVD outages are common. Use the configured mirror fallback (`--nvdDatafeed` URL, Settings) until it recovers.
-- Retry now: the daily tasks run again at their time; to run one at once ask the code owner (the tasks are `grype_db_update`, `nvd_update`, `rules_and_templates_update`).
+- Retry now: the daily tasks run again at their time; to run one at once ask the code owner (the tasks are `grype_db_update`, `rules_and_templates_update`).
 
 The data stays as it was; scans keep using the last good version, which is why the alert is about *age*.
 

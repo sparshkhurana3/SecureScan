@@ -18,7 +18,8 @@ scanners:
       - {path: /tmp, size: 512m}
     limits: {cpus: 1, memory: 2g, pids: 128}
     timeout_minutes: 20
-    max_parallel: 2
+    max_parallel: 1
+    lock: scanner
     env:
       HOME: /tmp
       XDG_CACHE_HOME: /tmp/.cache
@@ -50,7 +51,7 @@ scanners:
       - {name: out, target: /content/grype-db, read_only: false}
     tmpfs:
       - {path: /tmp, size: 1g}
-    limits: {cpus: 1, memory: 2g, pids: 128}
+    limits: {cpus: 1, memory: 1536m, pids: 128}
     timeout_minutes: 30
     max_parallel: 1
     env:
@@ -74,7 +75,7 @@ scanners:
       - {name: content, target: /content/grype-db, read_only: true}
     tmpfs:
       - {path: /tmp, size: 64m}
-    limits: {cpus: 1, memory: 1g, pids: 64}
+    limits: {cpus: 1, memory: 512m, pids: 64}
     timeout_minutes: 5
     max_parallel: 1
     env:

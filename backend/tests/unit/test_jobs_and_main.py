@@ -37,16 +37,16 @@ async def test_registered_hook_is_run() -> None:
     async def fake(timestamp: int) -> None:
         calls.append(timestamp)
 
-    previous = hooks._PERIODIC.get("nvd_update")
-    hooks.periodic_hook("nvd_update")(fake)
+    previous = hooks._PERIODIC.get("grype_db_update")
+    hooks.periodic_hook("grype_db_update")(fake)
     try:
-        assert await hooks.run_periodic("nvd_update", 42) is True
+        assert await hooks.run_periodic("grype_db_update", 42) is True
         assert calls == [42]
     finally:
         if previous is None:
-            hooks._PERIODIC.pop("nvd_update", None)
+            hooks._PERIODIC.pop("grype_db_update", None)
         else:
-            hooks._PERIODIC["nvd_update"] = previous
+            hooks._PERIODIC["grype_db_update"] = previous
 
 
 def test_unknown_periodic_hook_name_is_rejected() -> None:
@@ -108,7 +108,7 @@ def test_dispatch_table_matches_the_shared_rules() -> None:
     assert entry.DISPATCH["migrate"] == ("securescan.db.migrate", "run")
     assert entry.DISPATCH["worker"] == ("securescan.jobs.worker", "run")
     assert entry.DISPATCH["dojo-init"] == ("securescan.integrations.defectdojo.init", "run")
-    assert entry.DISPATCH["sonar-init"] == ("securescan.integrations.sonarqube.init", "run")
+    assert "sonar-init" not in entry.DISPATCH
     assert entry.COMMANDS[0] == "api"
 
 
@@ -118,7 +118,6 @@ def test_dispatch_table_matches_the_shared_rules() -> None:
 def test_settings_defaults_cover_plan_section_7_1() -> None:
     settings = Settings()
     assert settings.worker_concurrency == 4
-    assert settings.sonarqube_idle_minutes == 15
     assert settings.egress_idle_minutes == 5
     assert settings.github_poll_interval_minutes == 10
     assert settings.session_idle_hours == 8
@@ -146,7 +145,6 @@ def test_metrics_registry_has_the_observability_table() -> None:
         "securescan_import_lag_seconds",
         "securescan_import_dead_letters",
         "securescan_github_poll_last_success_timestamp",
-        "securescan_sonarqube_start_seconds",
         "securescan_egress_proxy_up",
         "securescan_disk_used_ratio",
         "securescan_feed_age_seconds",

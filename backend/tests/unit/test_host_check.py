@@ -23,7 +23,6 @@ from securescan.runner.host_check import (
     parse_api_version,
     parse_backup_status,
     parse_controllers,
-    parse_int_file,
     parse_server_header,
     read_cgroup,
     read_docker,
@@ -33,8 +32,6 @@ from securescan.runner.host_check import (
 GOOD = HostFacts(
     cgroup_v2=True,
     cgroup_controllers=frozenset({"cpuset", "cpu", "io", "memory", "pids"}),
-    max_map_count=524288,
-    file_max=262144,
     docker_version=(29, 0, 1),
     docker_api=(1, 52),
 )
@@ -45,12 +42,6 @@ def names(checks: list[Any]) -> list[str]:
 
 
 # --------------------------------------------------------------------------- parsing
-def test_parse_int_file() -> None:
-    assert parse_int_file("524288\n") == 524288
-    assert parse_int_file("  65530 \n") == 65530
-    assert parse_int_file("") is None and parse_int_file(None) is None and parse_int_file("max") is None
-
-
 def test_parse_controllers() -> None:
     assert parse_controllers("cpuset cpu io memory pids\n") == {"cpuset", "cpu", "io", "memory", "pids"}
     assert parse_controllers(None) == set()
@@ -75,12 +66,12 @@ def test_docker_ping_url() -> None:
 def test_a_good_host_passes_every_check() -> None:
     result = evaluate(GOOD)
     assert result.ok and result.warnings == [] and result.blocking_failures == []
-    assert {"cgroup_v2", "cgroup_controllers", "vm.max_map_count", "fs.file-max", "docker_api", "docker_engine"} <= set(names(result.checks))
+    assert {"cgroup_v2", "cgroup_controllers", "docker_api", "docker_engine"} <= set(names(result.checks))
     assert result.to_dict()["ok"] is True
 
 
 def test_cgroup_v1_blocks() -> None:
-    result = evaluate(HostFacts(cgroup_v2=False, max_map_count=524288, file_max=131072, docker_api=(1, 52), docker_version=(29, 0, 0)))
+    result = evaluate(HostFacts(cgroup_v2=False, docker_api=(1, 52), docker_version=(29, 0, 0)))
     assert not result.ok and names(result.blocking_failures) == ["cgroup_v2"]
 
 
@@ -93,19 +84,13 @@ def test_missing_memory_or_pids_controller_blocks_but_missing_cpu_only_warns() -
     assert result.ok and names(result.warnings) == ["cgroup_controllers"]
 
 
-def test_low_kernel_limits_block_with_the_remedy() -> None:
-    result = evaluate(HostFacts(**{**GOOD.__dict__, "max_map_count": 65530, "file_max": 1000}))
-    assert names(result.blocking_failures) == ["vm.max_map_count", "fs.file-max"]
-    assert "sysctl.d/99-securescan.conf" in result.blocking_failures[0].detail
-
-
 def test_the_thresholds_come_from_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESCAN_HOST_MIN_MAX_MAP_COUNT", "100")
+    monkeypatch.setenv("SECURESCAN_HOST_MIN_DOCKER_MAJOR", "30")
     monkeypatch.setenv("SECURESCAN_HOST_MIN_DOCKER_API", "1.50")
     get_settings.cache_clear()
     limits = Thresholds.from_settings(get_settings())
-    assert limits.max_map_count == 100 and limits.docker_api == (1, 50)
-    assert evaluate(HostFacts(**{**GOOD.__dict__, "max_map_count": 200, "docker_api": (1, 49)}), limits).blocking_failures[0].name == "docker_api"
+    assert limits.docker_major == 30 and limits.docker_api == (1, 50)
+    assert evaluate(HostFacts(**{**GOOD.__dict__, "docker_api": (1, 49)}), limits).blocking_failures[0].name == "docker_api"
 
 
 def test_an_old_docker_api_blocks_and_an_old_engine_only_warns() -> None:
@@ -118,7 +103,7 @@ def test_an_old_docker_api_blocks_and_an_old_engine_only_warns() -> None:
 def test_values_that_could_not_be_read_are_warnings_never_passes() -> None:
     result = evaluate(HostFacts())
     assert result.ok  # nothing is known to be wrong...
-    assert {"cgroup_v2", "vm.max_map_count", "fs.file-max", "docker_version"} <= set(names(result.warnings))  # ...and nothing is claimed
+    assert {"cgroup_v2", "docker_version"} <= set(names(result.warnings))  # ...and nothing is claimed
 
 
 # --------------------------------------------------------------------------- reading the container's view

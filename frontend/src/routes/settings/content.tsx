@@ -1,18 +1,9 @@
-import { type FormEvent, useState } from "react";
-
 import { errorMessage } from "../../api/client";
-import {
-  type ContentFeed,
-  useContentVersions,
-  useNvdKeyStatus,
-  useStartContentUpdate,
-  useStoreNvdKey,
-} from "../../api/operations";
+import { type ContentFeed, useContentVersions, useStartContentUpdate } from "../../api/operations";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { EmptyState, ErrorNotice, Field, LoadMore, LoadingText, PageHeader } from "../../components/ui/page";
+import { EmptyState, ErrorNotice, LoadMore, LoadingText, PageHeader } from "../../components/ui/page";
 import {
   Table,
   TableBody,
@@ -27,80 +18,7 @@ export const FEED_LABELS: Record<ContentFeed, string> = {
   semgrep_rules: "Semgrep rules",
   nuclei_templates: "Nuclei templates",
   grype_db: "Grype vulnerability database",
-  nvd_data: "NVD data (Dependency-Check)",
 };
-
-function NvdKeyCard() {
-  const status = useNvdKeyStatus();
-  const store = useStoreNvdKey();
-  const [key, setKey] = useState("");
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const value = key.trim();
-    if (!value) return;
-    store.mutate(value, { onSuccess: () => setKey("") });
-  };
-
-  return (
-    <Card className="mt-8">
-      <CardHeader>
-        <CardTitle>NVD API key</CardTitle>
-        <CardDescription>
-          Dependency-Check downloads the NVD data with this key. It is stored encrypted and is never shown again.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {status.isPending ? <LoadingText>Loading...</LoadingText> : null}
-        {status.isError ? <ErrorNotice error={status.error} title="Could not read the NVD key status" /> : null}
-        {status.data ? (
-          <p className="mb-4 text-sm">
-            <StatusBadge
-              status={status.data.configured ? "ok" : "failed"}
-              label={status.data.configured ? "Configured" : "Not configured"}
-            />
-            {status.data.configured ? (
-              <span className="ml-2 text-muted-foreground">
-                Source: {status.data.source}
-                {status.data.stored_at ? `, stored ${formatDateTime(status.data.stored_at)}` : ""}
-              </span>
-            ) : null}
-            {status.data.mirror ? (
-              <span className="ml-2 text-muted-foreground">A local NVD mirror is in use.</span>
-            ) : null}
-          </p>
-        ) : null}
-        <form onSubmit={submit} aria-label="Store the NVD API key" className="flex flex-col gap-3 sm:max-w-md">
-          <Field id="nvd-key" label="New NVD API key">
-            <Input
-              id="nvd-key"
-              type="password"
-              autoComplete="off"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              required
-            />
-          </Field>
-          {store.isError ? (
-            <p role="alert" className="text-sm font-semibold text-foreground">
-              {errorMessage(store.error)}
-            </p>
-          ) : null}
-          {store.isSuccess ? (
-            <p role="status" className="text-sm">
-              The key was stored.
-            </p>
-          ) : null}
-          <div>
-            <Button type="submit" disabled={store.isPending || key.trim() === ""}>
-              {store.isPending ? "Storing..." : "Store key"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function ContentPage() {
   const versions = useContentVersions();
@@ -149,8 +67,6 @@ export function ContentPage() {
           ) : null}
         </CardContent>
       </Card>
-
-      <NvdKeyCard />
 
       <section aria-labelledby="versions-title" className="mt-8">
         <h2 id="versions-title" className="mb-3 text-lg font-semibold">

@@ -28,17 +28,17 @@ Shorthand (as in `docs/install.md`): `sc` is `docker compose --project-directory
   from another machine `nc -zv <machine> 8080` fails. `docker network inspect securescan_dojo --format '{{.Internal}}'` -> `true`.
 - [ ] **Accounts are provisioned, not created by hand.** Sign in to the portal once as a new Analyst; Settings -> DefectDojo accounts lists the account with the initial password shown once. `defectdojo_account.create` is in the audit log.
 - [ ] **90-day inactivity disable.** Settings -> DefectDojo accounts shows the "last login" and "disabled" columns; the setting `SECURESCAN_DEFECTDOJO_ACCOUNT_EXPIRY_DAYS` is 90 (`sc exec -T api python -c "from securescan.config import get_settings; print(get_settings().defectdojo_account_expiry_days)"`).
-- [ ] **Break-glass credentials sealed and their use alerted.** `deploy/secrets/dd_admin_password` and `sonarqube_admin_password` exist and a copy sits in the vault. Test: sign in to DefectDojo as `admin` through the gateway; after the next run of `account_expiry` (04:00 UTC) the audit log has `defectdojo.break_glass_login` and Prometheus shows `securescan_break_glass_logins_total{tool="defectdojo"}` up by one; the alert `SecureScanBreakGlassLogin` fires (`deploy/monitoring/alerts.yaml`).
+- [ ] **Break-glass credentials sealed and their use alerted.** `deploy/secrets/dd_admin_password` exists and a copy sits in the vault. Test: sign in to DefectDojo as `admin` through the gateway; after the next run of `account_expiry` (04:00 UTC) the audit log has `defectdojo.break_glass_login` and Prometheus shows `securescan_break_glass_logins_total{tool="defectdojo"}` up by one; the alert `SecureScanBreakGlassLogin` fires (`deploy/monitoring/alerts.yaml`).
 
 ## 3. Scanner containers
 
 - [ ] **Fixed catalogue; containers are built only from it.** `git log --oneline -- scanners/catalogue.yaml` shows reviewed changes only; `sc exec -T worker python -c "from securescan.runner.catalogue import load_catalogue; print(sorted(load_catalogue()))"` lists the tools. There is no tool outside the catalogue and no CodeQL.
-- [ ] **No network for code scanners; the SonarQube scanner reaches only `sonarqube`; DAST only through its proxy.** While a scan runs:
+- [ ] **No network for code scanners; DAST only through its proxy.** While a scan runs:
   `docker inspect --format '{{.Name}} net={{.HostConfig.NetworkMode}}' $(docker ps -q --filter name=securescan-job)` -> `net=none` for Semgrep, Gitleaks, Syft, Grype, SpotBugs.
 - [ ] **Read-only rootfs, dropped capabilities, no-new-privileges, uid, PID and memory limits, hard timeout.** Same containers:
   `docker inspect --format '{{.Name}} ro={{.HostConfig.ReadonlyRootfs}} capdrop={{.HostConfig.CapDrop}} sec={{.HostConfig.SecurityOpt}} user={{.Config.User}} pids={{.HostConfig.PidsLimit}} mem={{.HostConfig.Memory}}' <id>` -> `ro=true capdrop=[ALL] sec=[no-new-privileges:true]`, a numeric user, non-zero pids and memory.
   A job that exceeds its timeout ends `timed_out` with its container removed (`docker ps -a --filter name=securescan-job` shows none left).
-- [ ] **No secret in a scanner container's command line or environment.** `docker inspect --format '{{.Config.Cmd}} {{.Config.Env}}' <id>`: no token, no key, no NVD key; only the one credential a job needs, and only for that job.
+- [ ] **No secret in a scanner container's command line or environment.** `docker inspect --format '{{.Config.Cmd}} {{.Config.Env}}' <id>`: no token, no key; only the one credential a job needs, and only for that job.
 - [ ] **Workspace removed afterwards.** `sudo ls /var/lib/docker/volumes/securescan_data/_data/workspaces` is empty when no scan runs (the hourly `workspace_gc` removes leftovers older than 24 hours).
 
 ## 4. The Docker socket proxy
@@ -89,7 +89,7 @@ PY
 - [ ] **Token patterns scrubbed from logs.** `sc logs --no-color api worker 2>&1 | grep -E 'ghs_|ghp_|github_pat_|Bearer [A-Za-z0-9._-]{20,}|Token [A-Za-z0-9]{20,}' | head` -> nothing, after a GitHub test, a clone and a DefectDojo import.
 - [ ] **No token or key in the data volumes.** `sudo grep -rIl -E 'ghs_|github_pat_|BEGIN (RSA |OPENSSH )?PRIVATE KEY' /var/lib/docker/volumes/securescan_artifacts/_data /var/lib/docker/volumes/securescan_data/_data | head` -> nothing.
 - [ ] **Gitleaks runs with `--redact`; findings carry no secret value.** `grep -n -- '--redact' scanners/catalogue.yaml`; scan `python-planted`: the Gitleaks finding in DefectDojo shows `REDACTED`, not the planted value.
-- [ ] **ZAP and Nuclei header redaction; NVD key through a properties file.** `docker inspect` of an update container shows no `nvd.api.key` in `Cmd`/`Env`; the properties file is 0600 and exists only while the container runs.
+- [ ] **ZAP and Nuclei header redaction.** `grep -n -A1 -- '- -rd' scanners/catalogue.d/nuclei.yaml` shows `Authorization,Cookie`; login secrets reach ZAP's plan only as `${ENV}` references (`scanners/catalogue.d/zap.yaml`).
 - [ ] **CSV escaping.** In a history export, cells that start with `=`, `+`, `-`, `@`, tab or carriage return begin with `'` (`tests/unit/test_history_filters_and_csv.py`; by hand: a finding titled `=1+1`).
 - [ ] **PDF watermark on download.** Download a report PDF: the downloader's name and the time are stamped on every page (`pdftotext report.pdf - | head`).
 - [ ] **Secrets never in git.** `git ls-files deploy/secrets deploy/.env deploy/images.env '*.pem' '*.key' '*.age'` lists only `deploy/secrets/.gitkeep` and `deploy/secrets/README.md`; `git log -p --all -S'BEGIN PRIVATE KEY' | head` is empty.
@@ -97,17 +97,17 @@ PY
 | Secret | Where it lives | Who may read it | Backup |
 | --- | --- | --- | --- |
 | `securescan_master_key` | `deploy/secrets/` and the vault | root; the api and worker containers | in the encrypted backup set; also in the vault |
-| database passwords, `dd_*` keys, `sonarqube_admin_password` | `deploy/secrets/` | root; the container that needs it | in the encrypted backup set |
+| database passwords, `dd_*` keys | `deploy/secrets/` | root; the container that needs it | in the encrypted backup set |
 | `oidc_client_secret` | `deploy/secrets/`; Entra holds the value | root; api and worker | in the set; Entra can issue a new one |
 | GitHub App private key | encrypted in the database (Settings) or `deploy/secrets/github_app_key_*` | the worker | database in the set; GitHub can issue a new key |
 | TLS key and CA | `deploy/secrets/tls/` | root; gateway, db | in the set; the CA issues a new certificate |
 | age private key | **not on the machine after setup**: the vault | the restore operator | it is the key to everything else |
-| vendor credentials, DAST login profiles, NVD key | encrypted in the database | the worker, for one job | database in the set |
+| vendor credentials, DAST login profiles | encrypted in the database | the worker, for one job | database in the set |
 
 ## 8. TLS
 
 - [ ] **TLS 1.2 or later on the gateway.** `openssl s_client -connect <host>:443 -tls1_1 </dev/null 2>&1 | grep -i 'alert\|error'` (refused) and `-tls1_2` / `-tls1_3` succeed; `sslscan` or `nmap --script ssl-enum-ciphers -p 443 <host>` shows no weak cipher. HSTS header present: `curl -skI $PORTAL | grep -i strict-transport`.
-- [ ] **TLS to PostgreSQL, verified.** `psql "select a.usename, a.datname, s.ssl from pg_stat_ssl s join pg_stat_activity a using (pid) where a.datname is not null and a.client_addr is not null"` -> `ssl = t` for `securescan`, `defectdojo` and (while it runs) `sonarqube`; `sc exec -T api printenv SECURESCAN_DATABASE_URL` ends `sslmode=verify-full&sslrootcert=/run/secrets/tls_ca`; `deploy/defectdojo/override.yaml` sets the same for DefectDojo.
+- [ ] **TLS to PostgreSQL, verified.** `psql "select a.usename, a.datname, s.ssl from pg_stat_ssl s join pg_stat_activity a using (pid) where a.datname is not null and a.client_addr is not null"` -> `ssl = t` for `securescan` and `defectdojo`; `sc exec -T api printenv SECURESCAN_DATABASE_URL` ends `sslmode=verify-full&sslrootcert=/run/secrets/tls_ca`; `deploy/defectdojo/override.yaml` sets the same for DefectDojo.
 - [ ] **Certificate expiry known.** `openssl x509 -in deploy/secrets/tls/server.crt -noout -enddate` is in the calendar; renewal replaces the files and `sc restart gateway db`.
 
 ## 9. Audit log
@@ -134,4 +134,4 @@ PY
 | The backup set holds the secrets (encrypted) | Chosen so that a restore on a new machine is complete | `BACKUP_INCLUDE_SECRETS=false` if policy forbids; then the vault must hold every secret; the age private key never stays on the machine |
 | `/tmp` of the backend containers is not `noexec` | git's credential helper runs from there | Revisit after the first run (`docs/build-notes/M11.md`) |
 | SSH deploy-key clones use port 22, which squid does not carry | Open item of M7 | Prefer HTTPS tokens for vendors, or allow SSH egress for the worker at the firewall |
-| Scanner output stays on the machine | SonarQube output and scanned code never go to an external AI service (licence rule) | Nothing to configure; do not add such an integration |
+| Scanner output stays on the machine | Scanner output and scanned code never go to an external AI service (Semgrep rules licence) | Nothing to configure; do not add such an integration |

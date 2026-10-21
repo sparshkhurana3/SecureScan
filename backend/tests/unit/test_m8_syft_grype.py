@@ -87,7 +87,7 @@ def test_the_syft_container_for_an_image_reads_the_archive_and_gets_a_bigger_tmp
     put_file(ctx.workspace.config, "image.tar")
     spec = BUILDER.syft_spec(ctx, entry, "anchore/syft@sha256:" + "a" * 64)
     assert "docker-archive:/config/image.tar" in spec.command and "dir:/src" not in spec.command
-    assert spec.tmpfs["/tmp"].startswith("rw,size=3g")
+    assert spec.tmpfs["/tmp"].startswith("rw,size=1536m")
 
 
 def test_the_grype_container_runs_against_the_sbom_with_the_database_mounted() -> None:

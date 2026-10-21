@@ -61,7 +61,6 @@ export type AppVersion = {
   description: string | null;
   commit_sha: string | null;
   dd_engagement_id: number | null;
-  sonar_project_key: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

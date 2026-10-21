@@ -56,7 +56,7 @@ SBOM_FILES = (
     ("sbom.syft.json", "application/json"),
     ("sbom.cdx.json", "application/vnd.cyclonedx+json"),
 )
-SYFT_TMPFS_IMAGE = "3g"
+SYFT_TMPFS_IMAGE = "1536m"  # charged to the 2560m memory limit: an image that does not fit fails the Syft stage
 SYFT_TMPFS_DIRECTORY = "512m"
 STALE_MARKERS = ("max allowed", "too old", "older than", "was built", "is stale")
 MISSING_MARKERS = (

@@ -285,7 +285,7 @@ def _request_minutes(tool: str, key: str, value: Any) -> int:
 
 
 # Per tool, the job options a scan REQUEST may set, with the check each value must pass. Everything else is a policy
-# switch (dependency-check's no_disclosure, a regression candidate token, SonarQube's binaries, limits) that comes only
+# switch (a regression candidate token, limits) that comes only
 # from the scan profile or from SecureScan's own callers (the regression runner passes requested_by="system").
 REQUEST_TOOL_OPTIONS: dict[str, dict[str, Any]] = {
     "semgrep": {"exclude": _request_excludes},

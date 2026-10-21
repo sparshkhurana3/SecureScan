@@ -45,8 +45,9 @@ from securescan.runner.specs import parse_size
 
 log = get_logger(__name__)
 
-MAX_CPUS = 16.0
-MAX_MEMORY_BYTES = 32 * 1024**3
+# A scanner shares a 4 vCPU / 8 GB machine with the always-on services (docs/decisions.md, 2026-10-21).
+MAX_CPUS = 2.0
+MAX_MEMORY_BYTES = 3 * 1024**3
 MAX_PIDS = 8192
 MAX_TIMEOUT_MINUTES = 12 * 60
 MAX_OPTIONS_KEYS = 50
@@ -74,7 +75,7 @@ class JobLimitOverrides(BaseModel):
     def _memory(cls, value: str | None) -> str | None:
         if value is not None:
             if parse_size(value) > MAX_MEMORY_BYTES:
-                raise ValueError("memory is limited to 32g")
+                raise ValueError("memory is limited to 3g")
         return value
 
 

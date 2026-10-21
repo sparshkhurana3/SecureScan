@@ -393,89 +393,6 @@ async def test_a_timeout_is_a_failure_and_a_proxy_problem_too(env: Env, monkeypa
     assert not outcome.ok and "egress proxy did not become ready" in outcome.message
 
 
-# ----------------------------------------------------------------------------------------------- NVD
-KEY = "0a1b2c3d-4e5f-6789-abcd-ef0123456789"
-
-
-async def test_the_nvd_update_gives_the_key_to_its_own_container_through_a_private_file(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, Any] = {}
-
-    async def key(_session: Any, _settings: Any) -> str:
-        return KEY
-
-    async def idle(_tool: str, **_kw: Any) -> bool:
-        return True
-
-    def update(call: dict[str, Any]) -> ContainerResult:
-        config = Path(call["binds"][0][0])
-        properties = config / "odc.properties"
-        seen["text"] = properties.read_text(encoding="utf-8")
-        seen["mode"] = properties.stat().st_mode & 0o777
-        seen["config"] = config
-        return result(0, "update finished")
-
-    monkeypatch.setattr(updaters, "resolve_nvd_key", key)
-    monkeypatch.setattr(updaters, "_wait_for_idle_scans", idle)
-    env.script["odc-update"] = update
-    outcome = await updaters.update_nvd_data(Settings())
-    assert outcome.ok and outcome.version.startswith("nvd-") and env.versions[0]["feed"] == ContentFeed.NVD_DATA
-    call = env.containers[0]
-    assert f"nvd.api.key={KEY}" in seen["text"]
-    if os.name != "nt":
-        assert seen["mode"] == 0o600
-    assert not Path(seen["config"]).exists(), "the workspace with the key is removed afterwards"
-    assert call["command"][:2] == ["--updateonly", "--data"] and "--propertyfile" in call["command"]
-    assert call["command"][call["command"].index("--proxyserver") + 1] == "securescan-egress"
-    assert "--nvdDatafeed" not in call["command"]
-    assert KEY not in " ".join(call["command"]) and not call.get("env"), "the key is only in the file"
-    assert call["network"] == Settings().network_backend
-    assert call["binds"][1] == (str(content_root() / "odc-data"), "/usr/share/dependency-check/data", False)
-    assert env.hosts == [["dependency-check.github.io", "raw.githubusercontent.com", "services.nvd.nist.gov", "www.cisa.gov"]]
-
-
-async def test_a_mirror_url_is_a_flag_and_its_host_is_allowed(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def no_key(_session: Any, _settings: Any) -> None:
-        return None
-
-    async def idle(_tool: str, **_kw: Any) -> bool:
-        return True
-
-    monkeypatch.setattr(updaters, "resolve_nvd_key", no_key)
-    monkeypatch.setattr(updaters, "_wait_for_idle_scans", idle)
-    monkeypatch.setenv("SECURESCAN_NVD_DATAFEED_URL", "https://nvd-mirror.example.com/feeds")
-    env.script["odc-update"] = lambda call: result(0)
-    outcome = await updaters.update_nvd_data(Settings())
-    assert outcome.ok
-    command = env.containers[0]["command"]
-    assert command[command.index("--nvdDatafeed") + 1] == "https://nvd-mirror.example.com/feeds"
-    assert "nvd-mirror.example.com" in env.hosts[0]
-
-
-async def test_without_a_key_or_a_mirror_the_update_is_not_attempted(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def no_key(_session: Any, _settings: Any) -> None:
-        return None
-
-    monkeypatch.setattr(updaters, "resolve_nvd_key", no_key)
-    outcome = await updaters.update_nvd_data(Settings())
-    assert not outcome.ok and "no NVD API key" in outcome.message and env.containers == []
-    assert scanner_health._failed[ContentFeed.NVD_DATA.value] is True
-
-
-async def test_a_failing_nvd_update_leaves_no_version_behind(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def key(_session: Any, _settings: Any) -> str:
-        return KEY
-
-    async def idle(_tool: str, **_kw: Any) -> bool:
-        return True
-
-    monkeypatch.setattr(updaters, "resolve_nvd_key", key)
-    monkeypatch.setattr(updaters, "_wait_for_idle_scans", idle)
-    env.script["odc-update"] = lambda call: result(1, "NVD returned 403")
-    outcome = await updaters.update_nvd_data(Settings())
-    assert not outcome.ok and "NVD returned 403" in outcome.message and env.versions == []
-    assert KEY not in outcome.message
-
-
 # ----------------------------------------------------------------------------------------------- Semgrep rules
 @pytest.fixture
 def rules_env(env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Env:
@@ -781,7 +698,7 @@ def test_the_periodic_hooks_and_the_task_are_registered() -> None:
     from securescan.jobs.app import app
     from securescan.jobs.hooks import has_periodic_hook
 
-    for name in ("grype_db_update", "nvd_update", "rules_and_templates_update"):
+    for name in ("grype_db_update", "rules_and_templates_update"):
         assert has_periodic_hook(name), name
     assert "content_update" in app.tasks
 
@@ -805,23 +722,11 @@ async def test_the_bootstrap_queues_the_first_update_of_every_empty_feed(env: En
         queued.append((queueing_lock or "", kwargs))
         return 1
 
-    async def has_source(_settings: Any) -> bool:
-        return False
-
     monkeypatch.setattr(updaters, "defer", defer)
-    monkeypatch.setattr(updaters, "nvd_source_available", has_source)
     env.active[ContentFeed.GRYPE_DB.value] = types.SimpleNamespace(version="v6-x", built_at=None, fetched_at=None)
     await updaters.bootstrap_content()
     assert sorted(q[0] for q in queued) == ["content_update:nuclei_templates", "content_update:semgrep_rules"]
-    assert {q[1]["feed"] for q in queued} == {"nuclei_templates", "semgrep_rules"}, "grype has a version, nvd has no key"
-    queued.clear()
-
-    async def has_key(_settings: Any) -> bool:
-        return True
-
-    monkeypatch.setattr(updaters, "nvd_source_available", has_key)
-    await updaters.bootstrap_content()
-    assert "content_update:nvd_data" in [q[0] for q in queued]
+    assert {q[1]["feed"] for q in queued} == {"nuclei_templates", "semgrep_rules"}, "grype has a version"
 
 
 async def test_the_bootstrap_can_be_switched_off_and_never_blocks_start_up(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:

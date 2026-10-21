@@ -55,15 +55,12 @@ IMPORT_DEAD_LETTERS = Gauge(
     f"{_NS}_import_dead_letters", "Imports that exhausted their retries", registry=REGISTRY
 )
 
-# --- GitHub, SonarQube, egress ---------------------------------------------------------------------
+# --- GitHub, egress ------------------------------------------------------------------------------
 GITHUB_POLL_LAST_SUCCESS = Gauge(
     f"{_NS}_github_poll_last_success_timestamp", "Unix time of the last successful poll", registry=REGISTRY
 )
 GITHUB_RATE_LIMIT_REMAINING = Gauge(
     f"{_NS}_github_rate_limit_remaining", "GitHub rate limit remaining at the last poll", registry=REGISTRY
-)
-SONARQUBE_START_SECONDS = Gauge(
-    f"{_NS}_sonarqube_start_seconds", "Seconds the last SonarQube start took", registry=REGISTRY
 )
 EGRESS_PROXY_UP = Gauge(
     f"{_NS}_egress_proxy_up", "1 while the shared egress proxy container runs", registry=REGISTRY

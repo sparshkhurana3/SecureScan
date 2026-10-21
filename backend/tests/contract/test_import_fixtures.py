@@ -52,11 +52,9 @@ FALLBACK_SCAN_TYPES = {
     "semgrep.json": "Semgrep JSON Report",
     "gitleaks.json": "Gitleaks Scan",
     "grype.json": "Anchore Grype",
-    "dependency-check-report.xml": "Dependency Check Scan",
     "zap.xml": "ZAP Scan",
     "nuclei.json": "Nuclei Scan",
     "spotbugs.xml": "SpotBugs Scan",
-    "sonarqube-issues.zip": "SonarQube Scan",
 }
 
 

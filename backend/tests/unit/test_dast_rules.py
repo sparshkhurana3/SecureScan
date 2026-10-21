@@ -412,14 +412,14 @@ def test_blackout_message_says_when_it_ends() -> None:
 # --------------------------------------------------------------------------- the one-at-a-time lock
 def test_the_real_catalogue_gives_both_tools_the_dast_lock() -> None:
     catalogue = real_catalogue()
-    assert DAST_LOCK == "dast"
+    assert DAST_LOCK == "scanner"
     assert catalogue["zap"].lock == DAST_LOCK and catalogue["nuclei"].lock == DAST_LOCK
     assert catalogue["zap"].max_parallel == 1 and catalogue["nuclei"].max_parallel == 1
     check(FULL, make_target(), catalogue=catalogue)
 
 
 def test_a_dast_tool_without_the_lock_stops_scans() -> None:
-    broken: dict[str, CatalogueEntry] = {"zap": make_entry(tool="zap", lock=None), "nuclei": make_entry(tool="nuclei", lock="dast")}
+    broken: dict[str, CatalogueEntry] = {"zap": make_entry(tool="zap", lock=None), "nuclei": make_entry(tool="nuclei", lock=DAST_LOCK)}
     with pytest.raises(ServiceUnavailable) as caught:
         check(FULL, make_target(), catalogue=broken)
     assert caught.value.code == "dast.lock_not_configured" and caught.value.status_code == 503
@@ -430,8 +430,8 @@ def test_lock_names_come_from_the_catalogue_for_the_queue() -> None:
     from securescan.domain.scans import job_lock_name
 
     entry = real_catalogue()["zap"]
-    assert job_lock_name("zap", uuid.uuid4(), entry.max_parallel, entry.lock) == "dast"
-    assert job_lock_name("nuclei", uuid.uuid4(), 1, real_catalogue()["nuclei"].lock) == "dast"
+    assert job_lock_name("zap", uuid.uuid4(), entry.max_parallel, entry.lock) == "scanner"
+    assert job_lock_name("nuclei", uuid.uuid4(), 1, real_catalogue()["nuclei"].lock) == "scanner"
 
 
 # --------------------------------------------------------------------------- job-time re-check and async form

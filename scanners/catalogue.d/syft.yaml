@@ -14,10 +14,10 @@ scanners:
       - {name: out, target: /out, read_only: false}
       - {name: config, target: /config, read_only: true}   # holds image.tar for image targets
     tmpfs:
-      - {path: /tmp, size: 3g}      # image scans squash layers here; the builder lowers it for directory scans
-    limits: {cpus: 2, memory: 4g, pids: 256}
+      - {path: /tmp, size: 1536m}   # image scans squash layers here; the builder lowers it for directory scans
+    limits: {cpus: 2, memory: 2560m, pids: 256}   # the tmpfs is charged to this limit
     timeout_minutes: 30
-    max_parallel: 2
+    max_parallel: 1
     env:
       HOME: /tmp
       XDG_CACHE_HOME: /tmp/.cache

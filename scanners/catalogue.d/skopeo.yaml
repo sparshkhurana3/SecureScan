@@ -15,9 +15,9 @@ scanners:
       - {name: config, target: /config, read_only: true}
     tmpfs:
       - {path: /tmp, size: 256m}
-    limits: {cpus: 2, memory: 2g, pids: 256}
+    limits: {cpus: 1, memory: 1g, pids: 256}
     timeout_minutes: 60
-    max_parallel: 2
+    max_parallel: 1
     env:
       HOME: /tmp
       TMPDIR: /out/tmp          # layer staging goes to disk, not to memory

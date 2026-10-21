@@ -1,4 +1,4 @@
-"""Content updaters (plan M8 tasks 2, 3, 6): Grype database, NVD data, Semgrep rules, Nuclei templates.
+"""Content updaters (plan M8 tasks 2, 3, 6): Grype database, Semgrep rules, Nuclei templates.
 
 Scan containers never download anything; these updaters do, on a schedule, through the shared egress proxy
 (``runner/egress.py``) and in containers built from catalogue entries. Each update ends in a ``ContentVersion``
@@ -10,8 +10,6 @@ Periodic task              Feed                        What it does
 =========================  ==========================  ==============================================================
 ``grype_db_update`` 07:30  ``grype_db``                ``grype db update`` (single writer), ``grype db status`` for the
                                                        build date; no regression gate (data, not logic)
-``nvd_update`` 03:00       ``nvd_data``                Dependency-Check ``--updateonly`` with ``nvd.api.key`` in a 0600
-                                                       properties file of that container only; ``--nvdDatafeed`` mirror
 ``rules_and_templates_     ``semgrep_rules``,          clone ``semgrep-rules`` at the pinned commit (``content/
 update`` Sat 03:00         ``nuclei_templates``        semgrep-rules.lock``), licence filter, regression gate, symlink
                                                        switch; Nuclei templates into a dated directory, same gate
@@ -49,22 +47,19 @@ from sqlalchemy import select, update
 
 from securescan.config import Settings, get_settings
 from securescan.db.models.content import ContentVersion
-from securescan.db.models.enums import ContentFeed, CredentialKind
+from securescan.db.models.enums import ContentFeed
 from securescan.db.session import session_scope
 from securescan.domain.audit import SYSTEM_ACTOR, record_audit
-from securescan.domain.credentials import get_active_credential_by_kind, reveal_secret
 from securescan.jobs.app import app
 from securescan.jobs.enqueue import defer
 from securescan.jobs.hooks import periodic_hook, worker_startup_hook
 from securescan.jobs.scanner_health import (
     ALL_FEEDS,
-    FeedUpdate,
     active_versions,
     feed_value,
     record_feed_clock,
     record_update_result,
     reference_time,
-    tool_busy,
 )
 from securescan.logging import get_logger, scrub
 from securescan.runner.catalogue import (
@@ -82,18 +77,15 @@ from securescan.runner.tools._support import (
     content_dir,
     egress_network,
     proxy_env,
-    proxy_host_port,
     spec_from_entry,
 )
 from securescan.runner.tools.base import LABEL_MANAGED, LABEL_TOOL
-from securescan.runner.tools.dependency_check import DATA_DIRECTORY, write_properties
 from securescan.runner.workspace import Workspace
 from securescan.util import new_id, utcnow
 
 log = get_logger(__name__)
 
 GRYPE_HOSTS = ("grype.anchore.io", "toolbox-data.anchore.io")
-NVD_HOSTS = ("services.nvd.nist.gov", "www.cisa.gov", "raw.githubusercontent.com", "dependency-check.github.io")
 GITHUB_HOSTS = ("github.com", "codeload.github.com")
 NUCLEI_HOSTS = (
     "github.com",
@@ -110,7 +102,6 @@ TEMPLATES_LINK = "nuclei-templates"
 BUNDLE_INFO = "BUNDLE.info"
 GRYPE_DB_DIRECTORY = "grype-db"
 MIN_TEMPLATE_FILES = 200
-ODC_BUSY_WAIT_SECONDS = 2 * 3600
 NOTICE_PREFIXES = ("LICENSE", "LICENCE", "NOTICE", "COPYING")
 YAML_SUFFIXES = (".yaml", ".yml")
 
@@ -368,119 +359,6 @@ async def update_grype_db(settings: Settings | None = None) -> UpdateOutcome:
             row_id = row.id
             changed = previous is None or previous.version != version
         return await finish(UpdateOutcome(feed.value, True, changed, version, "updated"), feed, row_id)
-
-
-# =============================================================================================== NVD data
-async def resolve_nvd_key(session: Any, settings: Settings) -> str | None:
-    """The NVD API key: the stored credential (kind ``nvd_key``) first, else ``SECURESCAN_NVD_API_KEY``."""
-    credential = await get_active_credential_by_kind(session, CredentialKind.NVD_KEY)
-    if credential is not None:
-        credential.last_used_at = utcnow()
-        return reveal_secret(credential)
-    return settings.nvd_api_key or None
-
-
-async def nvd_source_available(settings: Settings) -> bool:
-    """True when an NVD key (credential or setting) or a mirror URL is configured."""
-    if settings.nvd_api_key or settings.nvd_datafeed_url:
-        return True
-    async with session_scope() as db:
-        return await get_active_credential_by_kind(db, CredentialKind.NVD_KEY) is not None
-
-
-def datafeed_host(url: str) -> str | None:
-    from urllib.parse import urlsplit
-
-    host = urlsplit(url).hostname if url else None
-    return host.lower() if host else None
-
-
-async def update_nvd_data(settings: Settings | None = None) -> UpdateOutcome:
-    """Daily: Dependency-Check ``--updateonly`` (see the module docstring)."""
-    cfg = settings or get_settings()
-    feed = ContentFeed.NVD_DATA
-    async with feed_lock(feed):
-        async with session_scope() as db:
-            key = await resolve_nvd_key(db, cfg)
-        mirror = cfg.nvd_datafeed_url.strip()
-        if not key and not mirror:
-            return await finish(
-                UpdateOutcome(
-                    feed.value, False,
-                    message="no NVD API key and no mirror configured: set the key under Settings, Content "
-                    "(or SECURESCAN_NVD_API_KEY_FILE), or SECURESCAN_NVD_DATAFEED_URL",
-                ),
-                feed,
-            )  # fmt: skip
-        entry = get_entry("odc-update")
-        data_dir = content_dir(cfg, DATA_DIRECTORY)
-        hosts = list(NVD_HOSTS)
-        mirror_host = datafeed_host(mirror)
-        if mirror_host and mirror_host not in hosts:
-            hosts.append(mirror_host)
-        if not await _wait_for_idle_scans("dependency-check"):
-            return await finish(
-                UpdateOutcome(feed.value, False, message="Dependency-Check scans kept running; the update will retry"),
-                feed,
-            )
-        workspace = await asyncio.to_thread(Workspace.create, new_id())
-        try:
-            write_properties(workspace.config, key)  # 0600, this container only
-            try:
-                async with FeedUpdate(feed), egress_lease(hosts) as proxy_url:
-                    requested: list[tuple[str, str | None]] = []
-                    if mirror:
-                        requested.append(("--nvdDatafeed", mirror))
-                    endpoint = proxy_host_port(proxy_url)
-                    if endpoint is not None:
-                        requested += [("--proxyserver", endpoint[0]), ("--proxyport", str(endpoint[1]))]
-                    command = [*entry.render_command(), *entry.render_optional_args(requested)]
-                    result = await run_updater_container(
-                        entry,
-                        name="securescan-updater-nvd",
-                        binds=[
-                            (str(workspace.config), entry.mount_target("config"), True),
-                            (str(data_dir), entry.mount_target("out"), False),
-                        ],
-                        network=egress_network(cfg),
-                        command=command,
-                        settings=cfg,
-                    )
-            except EgressError as exc:
-                return await finish(UpdateOutcome(feed.value, False, message=str(exc)), feed)
-        finally:
-            await asyncio.to_thread(workspace.cleanup)
-        if result.timed_out or result.exit_code != 0:
-            reason = "timed out" if result.timed_out else f"exit code {result.exit_code}"
-            return await finish(
-                UpdateOutcome(feed.value, False, message=f"the NVD update failed ({reason}): {tail(result.logs)}"),
-                feed,
-            )
-        now = utcnow()
-        version = f"nvd-{now:%Y%m%d}"
-        async with session_scope() as db:
-            previous = (await active_versions(db)).get(feed.value)
-            row = await record_version(
-                db, feed, version, path=DATA_DIRECTORY, built_at=now,
-                regression_result="skipped", regression_detail={"reason": "data feed, no regression gate"},
-            )  # fmt: skip
-            row_id = row.id
-            changed = previous is None or previous.version != version
-        return await finish(UpdateOutcome(feed.value, True, changed, version, "updated"), feed, row_id)
-
-
-async def _wait_for_idle_scans(tool: str, *, interval: float = 30.0, limit: float = ODC_BUSY_WAIT_SECONDS) -> bool:
-    """Wait until no job of ``tool`` runs (the NVD data cannot be rewritten under a scan)."""
-    waited = 0.0
-    while True:
-        async with session_scope() as db:
-            busy = await tool_busy(db, tool)
-        if not busy:
-            return True
-        if waited >= limit:
-            return False
-        await asyncio.sleep(interval)
-        waited += interval
 
 
 # =============================================================================================== Semgrep rules
@@ -1097,7 +975,6 @@ async def run_regression(kind: str, candidate: Path | None = None) -> bool:
 # =============================================================================================== wiring
 UPDATERS = {
     ContentFeed.GRYPE_DB.value: update_grype_db,
-    ContentFeed.NVD_DATA.value: update_nvd_data,
     ContentFeed.SEMGREP_RULES.value: update_semgrep_rules,
     ContentFeed.NUCLEI_TEMPLATES.value: update_nuclei_templates,
 }
@@ -1120,11 +997,6 @@ async def update_feed(feed: ContentFeed | str) -> UpdateOutcome:
 @periodic_hook("grype_db_update")
 async def grype_db_update_hook(timestamp: int) -> None:
     await update_feed(ContentFeed.GRYPE_DB)
-
-
-@periodic_hook("nvd_update")
-async def nvd_update_hook(timestamp: int) -> None:
-    await update_feed(ContentFeed.NVD_DATA)
 
 
 @periodic_hook("rules_and_templates_update")
@@ -1151,9 +1023,6 @@ async def bootstrap_content() -> None:
             active = await active_versions(db)
         for feed in ALL_FEEDS:
             if feed.value in active:
-                continue
-            if feed is ContentFeed.NVD_DATA and not await nvd_source_available(cfg):
-                log.warning("nvd_bootstrap_skipped", reason="no NVD API key or mirror configured")
                 continue
             job_id = await defer(content_update, queueing_lock=f"content_update:{feed.value}", feed=feed.value)
             log.info("content_bootstrap_queued", feed=feed.value, job_id=job_id)

@@ -71,21 +71,13 @@ groups:
           summary: "No successful GitHub poll in the last hour"
           description: "Check Settings -> GitHub (rate limit, key, installation) and the egress proxy. docs/runbooks/github-app-key-rotation.md"
 
-      - alert: SecureScanSonarQubeSlowStart
-        expr: max(securescan_sonarqube_start_seconds) > 300
-        for: 0m
-        labels: {severity: warning}
-        annotations:
-          summary: "SonarQube needed more than 5 minutes to start"
-          description: "Check vm.max_map_count, memory and the SonarQube volume; docker logs sonarqube. docs/runbooks/sonarqube-upgrade.md"
-
       - alert: SecureScanCredentialsExpiring
         expr: max(securescan_credentials_expiring) > 0
         for: 1h
         labels: {severity: info}
         annotations:
           summary: "{{ $value }} stored credential(s) expire soon"
-          description: "Vendor tokens, deploy keys or the NVD key. Settings -> Credentials. docs/runbooks/credential-rotation.md"
+          description: "Vendor tokens or deploy keys. Settings -> Credentials. docs/runbooks/credential-rotation.md"
 
   - name: securescan-capacity
     rules:
@@ -115,12 +107,12 @@ groups:
   - name: securescan-feeds
     rules:
       - alert: SecureScanVulnerabilityDatabaseStale
-        expr: max by (feed) (securescan_feed_age_seconds{feed=~"grype_db|nvd_data"}) > 7 * 86400
+        expr: max by (feed) (securescan_feed_age_seconds{feed="grype_db"}) > 7 * 86400
         for: 30m
         labels: {severity: warning}
         annotations:
           summary: "The {{ $labels.feed }} vulnerability database is more than 7 days old"
-          description: "Scans against stale data report too little. Check the updater's egress hosts and the NVD API key. docs/runbooks/content-update-failed.md"
+          description: "Scans against stale data report too little. Check the updater's egress hosts. docs/runbooks/content-update-failed.md"
 
       - alert: SecureScanRulesOrTemplatesStale
         expr: max by (feed) (securescan_feed_age_seconds{feed=~"semgrep_rules|nuclei_templates"}) > 30 * 86400
@@ -144,7 +136,7 @@ groups:
   - name: securescan-security
     rules:
       - alert: SecureScanBreakGlassLogin
-        # The DefectDojo `admin` account or the SonarQube admin token was used. Expected only during an incident or an upgrade.
+        # The DefectDojo `admin` account was used. Expected only during an incident or an upgrade.
         expr: sum by (tool) (increase(securescan_break_glass_logins_total[15m])) > 0
         for: 0m
         labels: {severity: critical}

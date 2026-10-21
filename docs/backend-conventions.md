@@ -20,7 +20,7 @@ Python 3.14 in production, but keep every `.py` file free of syntax newer than 3
 | A tool command builder | `securescan/runner/tools/<tool>.py` exposing `BUILDER` | `securescan/runner/tools/__init__.py` (M3). |
 | Catalogue entries | `scanners/catalogue.yaml` plus `scanners/catalogue.d/*.yaml` | `securescan/runner/catalogue.py` (M3). |
 | After-sign-in work (DefectDojo account) | `@on_login` in `securescan/domain/accounts.py` | `securescan/auth/hooks.py` imports that module when it exists (section 5.4). |
-| A CLI command | `python -m securescan <command>`: `migrate` -> `securescan.db.migrate:run`, `worker` -> `securescan.jobs.worker:run`, `dojo-init` -> `securescan.integrations.defectdojo.init:run`, `sonar-init` -> `securescan.integrations.sonarqube.init:run`; each `run() -> int` | `securescan/__main__.py` imports the module; a missing module prints `<command>: not implemented yet` and returns 0. |
+| A CLI command | `python -m securescan <command>`: `migrate` -> `securescan.db.migrate:run`, `worker` -> `securescan.jobs.worker:run`, `dojo-init` -> `securescan.integrations.defectdojo.init:run`; each `run() -> int` | `securescan/__main__.py` imports the module; a missing module prints `<command>: not implemented yet` and returns 0. |
 
 Layers (plan 1.3): `api/` (request and response models, no business logic) calls `domain/` (rules) which uses `db/`
 (models, repositories), `integrations/`, `runner/`, `storage/`. Jobs call domain services.
@@ -48,14 +48,13 @@ variable wins over the file). Fields (default in brackets):
   `oidc_roles_claim` (`roles`), `oidc_redirect_path`; property `oidc_redirect_uri`.
 - Secrets: `master_key` (`MASTER_KEY_FILE`), `master_key_previous` (rotation), `credential_expiry_alert_days` (14).
 - Docker and volumes: `docker_host`, `data_root` (`/var/lib/securescan`), `data_host_root`, `artifacts_root`,
-  `content_root`, `scanners_dir`, `network_backend|sonarqube|dast|egress` (`securescan_<name>`); property
+  `content_root`, `scanners_dir`, `network_backend|dast|egress` (`securescan_<name>`); property
   `workspaces_root` (`<data_root>/workspaces`).
-- Worker: `worker_concurrency` (4), `worker_metrics_host`, `worker_metrics_port` (9100), `github_poll_interval_minutes` (10).
+- Worker: `worker_concurrency` (4; scanner containers still run one at a time through the catalogue lock `scanner`), `worker_metrics_host`, `worker_metrics_port` (9100), `github_poll_interval_minutes` (10).
 - Uploads: `upload_max_bytes` (2 GiB), `upload_chunk_bytes` (8 MiB, advertised), `upload_max_chunk_bytes` (32 MiB),
   `upload_stale_hours` (48).
 - DefectDojo: `defectdojo_admin_username`, `defectdojo_admin_password` (`DEFECTDOJO_ADMIN_PASSWORD_FILE`),
   `defectdojo_sync_username`, `defectdojo_accounts_username`.
-- SonarQube: `sonarqube_url`, `sonarqube_container`, `sonarqube_idle_minutes` (15), `sonarqube_admin_password`.
 - Egress: `egress_idle_minutes` (5), `egress_proxy_url`, `egress_allow_hosts_updaters` (comma list; property
   `updater_hosts`).
 
@@ -91,9 +90,9 @@ cancelled), `JobState` (queued, preparing, running, completed, completed_partial
 `ImportState` (pending, imported, failed), `ReportKind` (application, vendor), `Verdict` (pass, conditional, fail, pending),
 `ReviewState` (automatic, reviewed), `Severity` (critical, high, medium, low, info), `UserRole` (Admin, Analyst),
 `ArtifactKind` (upload, raw_report, sbom, log, report_file, snapshot, template, document), `UploadState`, `CredentialKind`
-(github_app_key, deploy_key, vendor_token, registry, dast_login, nvd_key, defectdojo_token, defectdojo_admin_token,
-sonarqube_token), `ScheduleKind` (weekly, dast, poll), `ContentFeed` (semgrep_rules, nuclei_templates, grype_db,
-nvd_data), `OutboxState` (pending, processing, done, dead_letter). `JOB_TERMINAL_STATES` lists the final job states.
+(github_app_key, deploy_key, vendor_token, registry, dast_login, defectdojo_token, defectdojo_admin_token; `nvd_key` and
+`sonarqube_token` are retired and kept only so old rows load), `ScheduleKind` (weekly, dast, poll), `ContentFeed` (semgrep_rules,
+nuclei_templates, grype_db; `nvd_data` is retired the same way), `OutboxState` (pending, processing, done, dead_letter). `JOB_TERMINAL_STATES` lists the final job states.
 
 Every table has `id` (UUIDv7, `new_id`); most have `created_at` (and `updated_at`, set it yourself on change; there is no
 trigger). Columns (all created by `0001_initial_schema.py`):
@@ -102,7 +101,7 @@ trigger). Columns (all created by `0001_initial_schema.py`):
 | --- | --- | --- | --- |
 | `db/models/vendors.py` | `Vendor` | `vendors` | id, name (unique), contact_name, contact_email, risk_tier, notes, archived_at, created_by_id |
 | `db/models/applications.py` | `Application` | `applications` | id, name (unique), type, vendor_id, vendor_product, hosting, description, criticality, data_classification, tags (JSON list), confirmed, automatic, github_repo_id (unique), github_full_name, default_branch, github_removed_at, dd_product_id, cached_counts (JSON {critical, high, ...}), cached_counts_at, last_scan_at, last_scan_id (soft ref), last_verdict, archived_at, created_by_id |
-| `db/models/versions.py` | `ApplicationVersion` | `application_versions` | id, application_id, label (unique per application), label_kind, description, commit_sha, dd_engagement_id, sonar_project_key, archived_at, created_by_id |
+| `db/models/versions.py` | `ApplicationVersion` | `application_versions` | id, application_id, label (unique per application), label_kind, description, commit_sha, dd_engagement_id, sonar_project_key (unused since 2026-10-21), archived_at, created_by_id |
 | `db/models/targets.py` | `Target` | `targets` | id, version_id, kind, name, locator, environment (url targets only), environment_set_by_id, environment_set_at, credential_id, login_profile_id (credential kind dast_login), upload_artifact_id, default_branch, scope_includes, scope_excludes, api_spec_type, api_spec_locator, api_spec_artifact_id, rate_limit_rps, blackout_windows, dast_cron, host_approved, vendor_authorization_artifact_id, vendor_authorized_from, vendor_authorized_until, vendor_contact, vendor_authorization_notes, archived_at, created_by_id |
 | `db/models/profiles.py` | `ScanProfile` | `scan_profiles` | id, name, version (unique together), kind, description, body_yaml, body (JSON), sha256, active, created_by_id |
 | `db/models/scans.py` | `Scan` | `scans` | id, application_id, version_id, target_id, profile_id, profile_name, profile_version, kind, mode, trigger, trigger_detail, state, verdict, verdict_detail, policy_id, started_by_id (NULL = system), idempotency_key (unique; store `"<user id>:<header value>"`), requested_tools, options, commit_sha, source_ref, source_digest, counts, coverage_notes, error, started_at, finished_at, cancel_requested_at, cancelled_by_id |
@@ -256,9 +255,9 @@ as the job's final state and consumed by an `imports` task.
 `securescan/jobs/maintenance.py` registers these periodic tasks (cron, UTC) with a `queueing_lock` equal to the name, in the
 `maintenance` queue unless stated: `stalled_jobs` (`*/5 * * * *`), `workspace_gc` (hourly), `history_state_refresh` (02:00),
 `github_discovery` (01:00, queue `github`), `github_poll` (every `github_poll_interval_minutes`, queue `github`),
-`grype_db_update` (07:30), `nvd_update` (03:00), `rules_and_templates_update` (Saturday 03:00), `image_update_proposals`
+`grype_db_update` (07:30), `rules_and_templates_update` (Saturday 03:00), `image_update_proposals`
 (1st of the month 04:00), `account_expiry` (04:00), `credential_expiry_alerts` (05:00; implemented in M2),
-`sonarqube_idle_stop` and `egress_idle_stop` (every 5 minutes), plus `session_cleanup` (hourly; implemented in M2: expired
+`egress_idle_stop` (every 5 minutes), plus `session_cleanup` (hourly; implemented in M2: expired
 sessions and stale uploads). To implement one, in your own `securescan/jobs/<module>.py`:
 
 ```python
@@ -288,7 +287,7 @@ Use `app.replace_connector(procrastinate.testing.InMemoryConnector())` (context 
   Never log request bodies, tokens or file contents.
 - `from securescan.observability.metrics import ...`: `QUEUE_DEPTH{queue}`, `OLDEST_QUEUED_AGE`, `JOBS_TOTAL{tool,state}`,
   `JOB_DURATION{tool}`, `IMPORT_LAG`, `IMPORT_DEAD_LETTERS`, `GITHUB_POLL_LAST_SUCCESS`, `GITHUB_RATE_LIMIT_REMAINING`,
-  `SONARQUBE_START_SECONDS`, `EGRESS_PROXY_UP`, `DISK_USED_RATIO{volume}`, `FEED_AGE_SECONDS{feed}`, `BACKUP_LAST_SUCCESS`,
+  `EGRESS_PROXY_UP`, `DISK_USED_RATIO{volume}`, `FEED_AGE_SECONDS{feed}`, `BACKUP_LAST_SUCCESS`,
   `BREAK_GLASS_LOGINS{tool}`, `LOGINS_TOTAL{outcome}`, `CREDENTIALS_EXPIRING`, `PERIODIC_RUNS{task}`,
   `HTTP_REQUEST_SECONDS`, `UP{component}`; `REGISTRY`, `render_prometheus()`, `snapshot()`, `refresh_db_gauges(session)`. Call
   `.set()`, `.inc()` or `.observe()` where the event happens; add a new metric to that file (one definition). The api serves

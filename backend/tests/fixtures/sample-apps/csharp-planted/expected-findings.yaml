@@ -18,6 +18,4 @@ tools:
       verified: false
   gitleaks: []           # no default Gitleaks rule is known to match a SQL Server connection string; fill after S7
   grype: []              # no package manifest with dependencies
-  dependency-check: []   # same
   spotbugs: []           # not applicable: no Java classes
-  sonarqube: []          # not analysed by design: the command-line scanner cannot analyse C# (design, "What each language gets")

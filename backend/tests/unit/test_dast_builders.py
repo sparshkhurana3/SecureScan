@@ -400,7 +400,7 @@ def test_nuclei_catalogue_entry_and_flag_allowlist() -> None:
     from tests.unit.runner_helpers import real_catalogue
 
     entry = real_catalogue()["nuclei"]
-    assert entry.network == "dast" and entry.lock == "dast" and entry.max_parallel == 1 and entry.target_kinds == ["url"]
+    assert entry.network == "dast" and entry.lock == "scanner" and entry.max_parallel == 1 and entry.target_kinds == ["url"]
     assert entry.defectdojo_scan_type == "Nuclei Scan" and entry.defectdojo_file == "nuclei.json"
     assert entry.outcome_for(0) == "completed" and entry.outcome_for(1) == "failed" and entry.outcome_for(2) == "failed"
     assert entry.render_command({"target_url": "http://t/"})[:2] == ["nuclei", "-u"]

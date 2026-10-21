@@ -13,4 +13,3 @@ SQL
 
 create securescan securescan /run/secrets/securescan_db_password
 create defectdojo defectdojo /run/secrets/defectdojo_db_password
-create sonarqube sonarqube /run/secrets/sonarqube_db_password

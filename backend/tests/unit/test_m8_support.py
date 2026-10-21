@@ -90,7 +90,7 @@ def test_a_spec_from_a_catalogue_entry_takes_everything_from_the_entry() -> None
     assert spec.image == IMAGE and spec.user == "1000:1000" and spec.read_only_rootfs is True
     assert spec.command[:3] == ["copy", "--retry-times", "2"] and spec.command[3] == "docker://ghcr.io/o/a:1"
     assert spec.env == {"HOME": "/tmp", "TMPDIR": "/out/tmp", "HTTPS_PROXY": "http://p:3128"}
-    assert spec.mem_limit == "2g" and spec.nano_cpus == 2_000_000_000 and spec.pids_limit == 256
+    assert spec.mem_limit == "1g" and spec.nano_cpus == 1_000_000_000 and spec.pids_limit == 256
     assert spec.tmpfs == {"/tmp": "rw,size=256m,mode=1777"} and spec.entrypoint is None
     assert spec.labels["securescan.managed"] == "true" and spec.labels["securescan.tool"] == "skopeo"
     assert spec.labels["securescan.job_id"] == "1" and spec.network == "securescan_backend"
@@ -100,9 +100,9 @@ def test_a_spec_from_a_catalogue_entry_takes_everything_from_the_entry() -> None
 
 
 def test_a_spec_can_override_the_users_of_the_entry_and_the_tmpfs() -> None:
-    entry = real_catalogue()["sonarqube-server"]
-    spec = spec_from_entry(entry, IMAGE, name="sonarqube", tmpfs={"/tmp": "rw,exec,size=1m"}, user="root")
-    assert spec.user == "0" and spec.tmpfs["/tmp"] == "rw,exec,size=1m" and "/opt/sonarqube/temp" in spec.tmpfs
+    entry = real_catalogue()["zap"]
+    spec = spec_from_entry(entry, IMAGE, name="zap", tmpfs={"/tmp": "rw,exec,size=1m"}, user="root")
+    assert spec.user == "0" and spec.tmpfs["/tmp"] == "rw,exec,size=1m" and "/home/zap" in spec.tmpfs
 
 
 async def test_skip_job_ends_the_job_as_skipped() -> None:

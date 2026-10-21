@@ -1,9 +1,9 @@
-"""Helpers shared by the M8 tool builders, the image source handler, the updaters and SonarQube.
+"""Helpers shared by the M8 tool builders, the image source handler and the updaters.
 
 This module is not a tool builder (its name starts with an underscore, so the registry skips it).
 
 * ``spec_from_entry``: a ``ContainerSpec`` from a catalogue entry for the containers that are not scan jobs
-  (updaters, image intake, the SonarQube server, regression runs). Everything about the container comes from
+  (updaters, image intake, regression runs). Everything about the container comes from
   the entry; the caller supplies only bind sources, networks and values the entry cannot know.
 * ``skip_job``: end a job as "skipped, with a coverage note" from inside ``prepare`` (the executor decides
   applicability before the source exists, so the tools that depend on the source's content must skip later).

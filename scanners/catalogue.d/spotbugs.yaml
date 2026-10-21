@@ -16,9 +16,10 @@ scanners:
       - {name: out, target: /out, read_only: false}
     tmpfs:
       - {path: /tmp, size: 512m}
-    limits: {cpus: 2, memory: 3g, pids: 256}
+    limits: {cpus: 2, memory: 2560m, pids: 256}   # 1792 MB heap, JVM overhead and the /tmp tmpfs
     timeout_minutes: 30
     max_parallel: 1
+    lock: scanner
     env:
       HOME: /tmp
       JAVA_TOOL_OPTIONS: "-Djava.io.tmpdir=/tmp"
@@ -29,7 +30,7 @@ scanners:
       - "-effort:max"
       - -low
       - -maxHeap
-      - "2048"
+      - "1792"
       - "-xml:withMessages={out}/spotbugs.xml"
     optional_args:
       - {flag: -auxclasspath, value: pattern, max_length: 2000}

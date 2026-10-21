@@ -11,7 +11,7 @@ Shorthand: `sc` and `psql` are defined in `docs/install.md` and `docs/security-c
 - The worker sends a heartbeat for every running job. The periodic task `stalled_jobs` (every 5 minutes) re-queues or fails a job whose heartbeat is older than 5 minutes
   and re-defers `queued` jobs that lost their queue entry.
 - On start the worker reconciles its containers with the database (`runner/recovery.py`): containers of jobs that no longer exist are removed.
-- `workspace_gc` (hourly) removes workspaces older than 24 hours. The SonarQube server stops after 15 idle minutes, the egress proxy after 5.
+- `workspace_gc` (hourly) removes workspaces older than 24 hours. The egress proxy stops after 5 idle minutes.
 - A job that exceeds its timeout is killed and ends `timed_out`; its container and workspace are removed.
 
 So give a problem 5 to 10 minutes before acting.
@@ -40,7 +40,7 @@ Reading the answers:
 
 `sc logs --tail 100 worker`. Common causes:
 
-- `The host does not meet the requirements`: run `bash scripts/check_host.sh` and fix what it reports (cgroup v2, `vm.max_map_count`, Docker version). Do not set `SECURESCAN_HOST_CHECK=warn` to "get going": the limits of the scanner containers would not be enforced.
+- `The host does not meet the requirements`: run `bash scripts/check_host.sh` and fix what it reports (cgroup v2, Docker version). Do not set `SECURESCAN_HOST_CHECK=warn` to "get going": the limits of the scanner containers would not be enforced.
 - The database is unreachable or the TLS certificate expired: `sc ps db`, `sc logs --tail 50 db`, `openssl x509 -in deploy/secrets/tls/server.crt -noout -enddate`.
 - The socket proxy is down: `sc ps socket-proxy`; `sc logs socket-proxy`.
 
@@ -48,7 +48,7 @@ After the fix `sc up -d worker`. Jobs that were running resume through `stalled_
 
 ## 3. Jobs wait in the queue
 
-A heavy tool holds its slot: Dependency-Check, SonarQube and SpotBugs run one at a time, Semgrep two at a time; a DAST job blocks other DAST jobs.
+One scanner container runs at a time (the catalogue lock `scanner`, sized for 4 vCPU / 8 GB): every other job, SAST or DAST, waits for it. A DAST full scan can hold the slot for hours.
 Look at the running job's log in the portal (scan detail). If it is simply slow, wait; if it is hung past its timeout, cancel its scan in the portal (scan detail, Cancel).
 **Do not edit `procrastinate_jobs` by hand.** If a job stays `doing` after a worker restart and 10 minutes, cancel the scan in the portal and start it again; tell the code owner.
 
@@ -66,8 +66,8 @@ docker ps -a --filter name=securescan-job --format '{{.Names}}'
 docker rm -f securescan-job-<uuid>
 ```
 
-`sonarqube` and `securescan-egress` are also created and removed by the worker; if they are stuck: `docker stop sonarqube` (it needs up to 5 minutes to stop cleanly, do not `kill` it) and `docker rm -f securescan-egress`.
-Both come back by themselves when a job needs them.
+`securescan-egress` is also created and removed by the worker; if it is stuck: `docker rm -f securescan-egress`.
+It comes back by itself when a job needs it.
 
 ## 6. Disk
 

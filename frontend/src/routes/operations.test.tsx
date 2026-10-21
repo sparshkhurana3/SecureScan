@@ -132,26 +132,18 @@ describe("ScannerHealthPage", () => {
 });
 
 describe("ContentPage", () => {
-  it("starts an update and stores the NVD key without showing it", async () => {
+  it("starts an update and offers only the feeds that are still updated", async () => {
     const calls = install({
       "GET /content-versions": () => page([]),
-      "GET /content/nvd-key": () => ({ configured: false, source: "none", mirror: false }),
       "POST /content-versions/updates": () => ({ feed: "grype_db", queued: true, message: "The update was queued." }),
-      "PUT /content/nvd-key": () => ({ configured: true, source: "credential", mirror: false }),
     });
     const user = userEvent.setup();
     renderPage(<ContentPage />);
     await user.click(await screen.findByRole("button", { name: "Update Grype vulnerability database" }));
     expect(await screen.findByText("The update was queued.")).toBeInTheDocument();
     expect(calls.find((c) => c.key === "POST /content-versions/updates")?.init.body).toEqual({ feed: "grype_db" });
-
-    const input = await screen.findByLabelText("New NVD API key");
-    expect(input).toHaveAttribute("type", "password");
-    await user.type(input, "secret-key");
-    await user.click(screen.getByRole("button", { name: "Store key" }));
-    await waitFor(() => expect(calls.some((c) => c.key === "PUT /content/nvd-key")).toBe(true));
-    expect(calls.find((c) => c.key === "PUT /content/nvd-key")?.init.body).toEqual({ key: "secret-key" });
-    await waitFor(() => expect(screen.getByLabelText("New NVD API key")).toHaveValue(""));
+    expect(screen.getAllByRole("button", { name: /^Update / })).toHaveLength(3);
+    expect(screen.queryByText(/NVD/)).not.toBeInTheDocument();
   });
 });
 

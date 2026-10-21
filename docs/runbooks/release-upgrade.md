@@ -1,8 +1,8 @@
 # Runbook: SecureScan release upgrade
 
 A release is a versioned Compose bundle: the repository at a tag (backend, portal, `deploy/`, `scanners/`, `docs/`). Releases are never automatic. Plan one per quarter, in a
-maintenance window announced to the security team (design, "Upgrades"). DefectDojo and SonarQube have their own runbooks (`defectdojo-upgrade.md`, `sonarqube-upgrade.md`);
-a release that also bumps them is done in two steps, each with its own backup.
+maintenance window announced to the security team (design, "Upgrades"). DefectDojo has its own runbook (`defectdojo-upgrade.md`);
+a release that also bumps it is done in two steps, each with its own backup.
 
 Shorthand `sc`, `psql`: `docs/install.md`.
 

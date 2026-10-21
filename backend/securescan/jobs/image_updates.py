@@ -6,7 +6,7 @@ every image points to now and which newer tag exists, stores new digests as ``Im
 queues one regression test per runtime image (``jobs/regression.py``). An Admin approves in Settings
 (``api/image_versions.py``); the catalogue loader then overlays the approved digest.
 
-The logic (tag series, the SonarQube December rule, storing, approving) is in
+The logic (tag series, storing, approving) is in
 ``securescan/domain/image_updates.py``; this module only wires it to the queue and the proxy.
 """
 

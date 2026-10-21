@@ -50,13 +50,14 @@ def catalogue_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_code_standard_profile_is_valid() -> None:
     text = (REPO_SCANNERS / "profiles" / "code-standard.yaml").read_text(encoding="utf-8")
     parsed = parse_profile_yaml(text)
-    assert parsed.profile == "code-standard" and parsed.version == 2 and parsed.kind == "sast"
-    # version 1 was Semgrep and Gitleaks only; M8 (version 2) adds the other code tools, see test_m8_catalogue.py
-    assert parsed.tools == ["semgrep", "gitleaks", "syft-grype", "dependency-check", "spotbugs", "sonarqube"]
+    assert parsed.profile == "code-standard" and parsed.version == 3 and parsed.kind == "sast"
+    # version 1 was Semgrep and Gitleaks only; version 2 added the M8 tools; version 3 drops SonarQube and
+    # Dependency-Check for the 4 vCPU / 8 GB sizing (see test_m8_catalogue.py)
+    assert parsed.tools == ["semgrep", "gitleaks", "syft-grype", "spotbugs"]
     semgrep = parsed.job("semgrep")
     assert semgrep is not None and semgrep.job_options() == {
         "timeout_minutes": 60,
-        "limits": {"cpus": 2.0, "memory": "4g"},
+        "limits": {"cpus": 2.0, "memory": "2560m"},
     }
     assert parsed.verdict is not None and parsed.verdict.fail_on == {"critical": 1, "high": 5}
     assert parsed.job("nope") is None
@@ -178,21 +179,21 @@ def test_string_list() -> None:
 async def test_seeding_inserts_scan_profiles_and_skips_tool_settings() -> None:
     session = FakeSession()
     inserted = await seed_profiles(session, REPO_SCANNERS)  # type: ignore[arg-type]
-    assert inserted == ["code-standard@2", "dast-api@1", "dast-baseline@1", "dast-full@1"]
+    assert inserted == ["code-standard@3", "dast-api@2", "dast-baseline@2", "dast-full@2"]
     rows = [r for r in session.added if isinstance(r, ScanProfile)]
     assert len(rows) == 4
     row = next(r for r in rows if r.name == "code-standard")
-    assert (row.name, row.version, row.kind, row.active) == ("code-standard", 2, "sast", True)
+    assert (row.name, row.version, row.kind, row.active) == ("code-standard", 3, "sast", True)
     text = (REPO_SCANNERS / "profiles" / "code-standard.yaml").read_text(encoding="utf-8")
     assert row.body_yaml == text and row.sha256 == profile_sha256(text)
-    assert row.body["jobs"][0]["tool"] == "semgrep" and row.body["version"] == 2
+    assert row.body["jobs"][0]["tool"] == "semgrep" and row.body["version"] == 3
 
 
 async def test_seeding_is_idempotent_and_never_overwrites() -> None:
     text = (REPO_SCANNERS / "profiles" / "code-standard.yaml").read_text(encoding="utf-8")
-    same = ScanProfile(name="code-standard", version=2, sha256=profile_sha256(text))
+    same = ScanProfile(name="code-standard", version=3, sha256=profile_sha256(text))
     assert await seed_profiles(FakeSession(rows=[same]), REPO_SCANNERS) == []  # type: ignore[arg-type]
-    edited = ScanProfile(name="code-standard", version=2, sha256="0" * 64)  # an Admin or an older file
+    edited = ScanProfile(name="code-standard", version=3, sha256="0" * 64)  # an Admin or an older file
     session = FakeSession(rows=[edited])
     assert await seed_profiles(session, REPO_SCANNERS) == []  # type: ignore[arg-type]
     assert edited.sha256 == "0" * 64 and session.added == []

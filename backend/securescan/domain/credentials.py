@@ -73,7 +73,7 @@ def reveal_secret(credential: Credential) -> str:
 async def get_active_credential_by_kind(
     session: AsyncSession, kind: CredentialKind
 ) -> Credential | None:
-    """The newest non-revoked credential of a kind (service tokens such as the NVD key)."""
+    """The newest non-revoked credential of a kind (service tokens such as the DefectDojo tokens)."""
     return await session.scalar(
         select(Credential)
         .where(Credential.kind == kind, Credential.revoked_at.is_(None))

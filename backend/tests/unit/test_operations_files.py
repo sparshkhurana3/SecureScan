@@ -19,7 +19,7 @@ DOCS = REPO_ROOT / "docs"
 SHELL = ["backup.sh", "restore.sh", "check_host.sh"]
 RUNBOOKS = [
     "stuck-scan", "defectdojo-unreachable", "content-update-failed", "release-upgrade", "defectdojo-upgrade",
-    "sonarqube-upgrade", "restore", "credential-rotation", "github-app-key-rotation", "approving-image-digest",
+    "restore", "credential-rotation", "github-app-key-rotation", "approving-image-digest",
     "performance",
 ]  # fmt: skip
 
@@ -88,7 +88,7 @@ def test_every_alert_the_design_asks_for_exists() -> None:
     for needle in (
         "securescan_oldest_queued_job_age_seconds", "securescan_jobs_total", "securescan_import_lag_seconds",
         "securescan_import_dead_letters", "securescan_github_poll_last_success_timestamp",
-        "securescan_sonarqube_start_seconds", "securescan_disk_used_ratio", "securescan_feed_age_seconds",
+        "securescan_disk_used_ratio", "securescan_feed_age_seconds",
         "securescan_backup_last_success_timestamp", "securescan_break_glass_logins_total",
         "securescan_http_request_duration_seconds_bucket", "securescan_host_check_ok",
     ):  # fmt: skip
@@ -132,6 +132,50 @@ def test_always_on_services_are_hardened(name: str) -> None:
     assert "no-new-privileges:true" in service["security_opt"]
     assert service.get("pids_limit")
     assert service["deploy"]["resources"]["limits"]["memory"]
+
+
+# The machine is 4 vCPU and 8 GB (docs/decisions.md, 2026-10-21): the always-on limits leave room for one scanner of
+# at most 3 GB (scanners/catalogue.yaml, lock `scanner`) and the operating system.
+ALWAYS_ON_MEMORY_BUDGET = int(5.5 * 1024**3)
+ONE_SHOT_SERVICES = ("migrate", "dojo-init", "initializer")
+
+
+class _ComposeLoader(yaml.SafeLoader):
+    """Reads Compose's own tags (``!reset``, ``!override``) as plain values."""
+
+
+def _untagged(loader: yaml.SafeLoader, _suffix: str, node: yaml.Node) -> Any:
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node, deep=True)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node, deep=True)
+    return loader.construct_scalar(node)  # type: ignore[arg-type]
+
+
+_ComposeLoader.add_multi_constructor("!", _untagged)
+
+
+def dojo_services() -> dict[str, dict[str, Any]]:
+    text = (REPO_ROOT / "deploy" / "defectdojo" / "override.yaml").read_text(encoding="utf-8")
+    return yaml.load(text, Loader=_ComposeLoader)["services"]  # type: ignore[no-any-return]  # noqa: S506 - a safe loader
+
+
+def test_the_always_on_services_fit_the_small_machine() -> None:
+    from securescan.runner.specs import parse_size
+
+    services = {**compose_services(), **{k: v for k, v in dojo_services().items() if v.get("profiles") != ["disabled"]}}
+    total = 0
+    for name, service in services.items():
+        limits = service["deploy"]["resources"]["limits"]
+        assert float(limits["cpus"]) <= 1.5, name
+        if name not in ONE_SHOT_SERVICES:
+            total += parse_size(limits["memory"])
+    assert total <= ALWAYS_ON_MEMORY_BUDGET, "%.2f GiB of always-on memory limits" % (total / 1024**3)
+
+
+def test_defectdojo_runs_small() -> None:
+    env = dojo_services()["uwsgi"]["environment"]
+    assert env["DD_UWSGI_NUM_OF_PROCESSES"] == "2" and env["DD_CELERY_WORKER_POOL_TYPE"] == "solo"
 
 
 def test_the_database_is_the_documented_exception() -> None:
@@ -188,8 +232,9 @@ def test_every_network_is_joined_by_a_service_or_created_by_dev_py() -> None:
         network = network or {}
         assert network.get("external") is True and network.get("name"), key
         assert network["name"] in dev_py, key
-    for name in ("sonarqube", "dast", "egress"):
+    for name in ("dast", "egress"):
         assert name not in used  # nothing permanent joins them
+    assert "sonarqube" not in (document["networks"] or {})
 
 
 def test_the_backend_image_is_installed_not_editable() -> None:
@@ -197,14 +242,12 @@ def test_the_backend_image_is_installed_not_editable() -> None:
     assert "uv sync --frozen --no-dev --no-editable" in dockerfile
 
 
-def test_the_worker_has_the_sonarqube_secrets_and_the_ssh_known_hosts() -> None:
+def test_the_worker_has_the_ssh_known_hosts_and_no_sonarqube_leftovers() -> None:
     document = compose_document()
     worker = document["services"]["worker"]
-    for secret in ("sonarqube_db_password", "sonarqube_admin_password"):
-        assert secret in worker["secrets"] and secret in document["secrets"]
+    assert not [s for s in document["secrets"] if "sonarqube" in s], "SonarQube was removed (4 vCPU / 8 GB sizing)"
+    assert not [k for k in worker["environment"] if "SONARQUBE" in k]
     env = worker["environment"]
-    assert env["SECURESCAN_SONARQUBE_DB_PASSWORD_FILE"] == "/run/secrets/sonarqube_db_password"
-    assert env["SECURESCAN_SONARQUBE_ADMIN_PASSWORD_FILE"] == "/run/secrets/sonarqube_admin_password"
     assert env["SECURESCAN_SSH_KNOWN_HOSTS_FILE"] == "/app/deploy/known_hosts"
     volumes = " ".join(str(v) for v in worker["volumes"])
     assert "./known_hosts:/app/deploy/known_hosts:ro" in volumes
@@ -235,7 +278,7 @@ def test_install_guide_and_runbooks_exist() -> None:
 
 def test_install_guide_names_the_scripts_and_the_settings() -> None:
     text = (DOCS / "install.md").read_text(encoding="utf-8")
-    for needle in ("check_host.sh", "backup.sh", "restore.sh", "BACKUP_REMOTE", "SOCKET_PROXY_USER", "pull-images", "vm.max_map_count"):
+    for needle in ("check_host.sh", "backup.sh", "restore.sh", "BACKUP_REMOTE", "SOCKET_PROXY_USER", "pull-images", "4 vCPU"):
         assert needle in text, needle
 
 

@@ -1,4 +1,4 @@
-"""Scanner image updates: monthly proposals, the SonarQube December rule, approval.
+"""Scanner image updates: monthly proposals and approval.
 
 The monthly task (``securescan/jobs/image_updates.py``) reads ``deploy/images.lock.yaml``, asks the
 registries what each tag points to now and which newer tags exist, and stores what it finds as
@@ -12,8 +12,8 @@ Row life cycle (``image_versions``)::
     proposal, passed (or skipped + acknowledged)  --approve-->  active = true, approved_at set
     proposal  --reject-->  source = "rejected"           active row  --deactivate-->  active = false
 
-Scope (``regression_detail["scope"]``): ``runtime`` images are started by the worker (scanners, the
-SonarQube server, squid, skopeo), so an approved row takes effect at the next scan. ``release`` images
+Scope (``regression_detail["scope"]``): ``runtime`` images are started by the worker (scanners,
+squid, skopeo), so an approved row takes effect at the next scan. ``release`` images
 (PostgreSQL, Python, Node, nginx, the socket proxy, DefectDojo, Valkey) are part of the Compose bundle:
 a proposal is only a notice, applied by editing ``deploy/images.lock.yaml`` in the next release.
 
@@ -51,8 +51,7 @@ SCOPE_RELEASE = "release"
 LOCAL_BUILT = frozenset({"SPOTBUGS_FSB"})  # built from scanners/spotbugs/Dockerfile, not pulled
 STATIC_RUNTIME_LOCKS = frozenset(
     {
-        "SEMGREP", "GITLEAKS", "SONARQUBE", "SONAR_SCANNER", "SYFT", "GRYPE", "DEPENDENCY_CHECK",
-        "ZAP", "NUCLEI", "SKOPEO", "SQUID",
+        "SEMGREP", "GITLEAKS", "SYFT", "GRYPE", "ZAP", "NUCLEI", "SKOPEO", "SQUID",
     }
 )  # fmt: skip
 
@@ -71,15 +70,12 @@ KEEP_COMPONENTS: dict[str, int] = {
 # Only images whose digest the scan job records (``scan_jobs.image_digest`` is the image of the job's own catalogue
 # entry) can be gated: the gate checks that the job ran the candidate. A tool missing here has no regression: the
 # proposal is stored as ``skipped`` and approving needs an acknowledgement. That is the case for the Syft image (it runs
-# inside the syft-grype job but is not the job's recorded image), for the SonarQube *server* (created by the lifecycle task,
-# not by the job; ``sonarqube-upgrade.md`` is the hand test), squid, skopeo, ZAP and Nuclei.
+# inside the syft-grype job but is not the job's recorded image), squid, skopeo, ZAP and Nuclei.
 REGRESSION_TOOLS: dict[str, tuple[str, str]] = {
     "semgrep": ("semgrep", "semgrep"),
     "gitleaks": ("gitleaks", "gitleaks"),
     "syft-grype": ("syft-grype", "grype"),  # the Grype image; also used by grype-db-update and grype-db-status
-    "dependency-check": ("dependency-check", "dependency-check"),
     "spotbugs": ("spotbugs", "spotbugs"),
-    "sonarqube": ("sonarqube", "sonarqube"),  # the scanner image (sonar-scanner-cli)
 }
 
 
@@ -88,7 +84,6 @@ REGRESSION_TOOLS: dict[str, tuple[str, str]] = {
 _TAG = re.compile(
     r"^(?P<prefix>v?)(?P<a>\d+(?:\.\d+)*)(?:_(?P<b>\d+(?:\.\d+)*))?(?P<suffix>-[A-Za-z][A-Za-z0-9._-]*)?$"
 )
-_SONAR = re.compile(r"^(?P<year>\d{2})\.(?P<month>\d{1,2})\.(?P<patch>\d+)\.(?P<build>\d+)-community$")
 
 
 @dataclass(frozen=True)
@@ -144,59 +139,12 @@ def newer_tags(current: str, tags: Iterable[str], keep_components: int = 0) -> l
     return [p.raw for p in found]
 
 
-# --------------------------------------------------------------------------- SonarQube December rule
-
-
-@dataclass(frozen=True, order=True)
-class SonarVersion:
-    """``YY.M.patch.build-community``: ``26.9.0.129388-community`` is the September 2026 build."""
-
-    year: int
-    month: int
-    patch: int
-    build: int
-
-
-def parse_sonar_tag(tag: str) -> SonarVersion | None:
-    match = _SONAR.match(tag.strip())
-    if match is None:
-        return None
-    return SonarVersion(
-        int(match.group("year")), int(match.group("month")), int(match.group("patch")), int(match.group("build"))
-    )
-
-
-def sonarqube_candidate_allowed(current_tag: str, candidate_tag: str) -> bool:
-    """The December rule of SonarQube Community Build.
-
-    A newer build of the same calendar year is always allowed. A build of the *next* calendar year is
-    allowed only when the current build is the December build of its year (Sonar requires every year
-    boundary to be crossed through that release). Two years ahead is never allowed: the in-between
-    December comes first.
-    """
-    current = parse_sonar_tag(current_tag)
-    candidate = parse_sonar_tag(candidate_tag)
-    if current is None or candidate is None or candidate <= current:
-        return False
-    if candidate.year == current.year:
-        return True
-    if candidate.year == current.year + 1:
-        return current.month == 12
-    return False
-
-
-def is_sonarqube_server(lock_name: str, tool: str) -> bool:
-    return lock_name == "SONARQUBE" or tool == "sonarqube-server"
-
-
 def select_candidate(
     lock_name: str, tool: str, current_tag: str, tags: Iterable[str], keep_components: int | None = None
 ) -> str | None:
     """The one newer tag to propose for an image, or None."""
     keep = KEEP_COMPONENTS.get(lock_name, 0) if keep_components is None else keep_components
     candidates = newer_tags(current_tag, tags, keep)
-    if is_sonarqube_server(lock_name, tool):
-        candidates = [c for c in candidates if sonarqube_candidate_allowed(current_tag, c)]
     return candidates[0] if candidates else None
 
 
@@ -496,19 +444,6 @@ def check_approvable(row: ImageVersion, *, acknowledge_skipped: bool) -> None:
         raise Conflict(
             "The regression check is %s. A proposal goes live only after the regression suite passed." % result,
             code="image.regression_not_passed",
-        )
-    previous = str(detail.get("previous_tag") or "")
-    tag = row.tag or ""
-    if (
-        previous
-        and previous != tag
-        and parse_sonar_tag(tag) is not None
-        and not sonarqube_candidate_allowed(previous, tag)
-    ):
-        raise Conflict(
-            "SonarQube crosses a year boundary only through the December build; "
-            "approve the December build of the current year first.",
-            code="image.december_rule",
         )
 
 

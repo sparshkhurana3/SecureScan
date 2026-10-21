@@ -11,8 +11,6 @@ under ``src/rootfs``) and collects
 Nothing found: the job is skipped with the coverage note "no compiled classes found" (``skip_job``). All paths
 reach the command line only after ``contained_path`` proved that they lie under ``/src``; nothing comes from
 user input except the file names inside the scanned source, and those are checked.
-
-The same discovery serves the SonarQube builder (``sonar.java.binaries``).
 """
 
 from __future__ import annotations

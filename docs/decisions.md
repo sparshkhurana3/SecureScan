@@ -60,3 +60,23 @@ Decision: the portal uses the logo files from `sonacomstar-ehs-brand-kit/` (writ
 Reason: `docs/design.md` says the logo files drop into one brand folder and replace the text wordmark; the kit's own traced vectors are not Sona Comstar's master artwork.
 Alternatives considered: copying the kit's React files and `brand.css` as they are (wrong language and styling system, EHS strings); keeping `#101828` (a navy tint on a black-and-white theme).
 Affects: `frontend/` only. Replace `frontend/public/brand/` with the official vector logo from corporate communications when available.
+
+## 2026-10-21 — Resize to 4 vCPU and 8 GB RAM; SonarQube and Dependency-Check removed
+Decision: SecureScan runs on one machine with 4 vCPU and 8 GB RAM. The user kept the portal, DefectDojo, the SAST kit and the DAST kit and chose to drop SonarQube and OWASP Dependency-Check while keeping SpotBugs with Find Security Bugs.
+- Scanners: Semgrep, Gitleaks, Syft and Grype, SpotBugs (SAST); ZAP and Nuclei (DAST). SonarQube (server, scanner, `sonar-init`, idle stop, December rule, database, volumes, secrets, network) and Dependency-Check (scanner, NVD updater, NVD key endpoints and Settings card, `odc-data`) are removed.
+- One scanner container at a time: every scan tool takes the catalogue lock `scanner` (`DAST_LOCK` is now `"scanner"`), so SAST and DAST jobs queue behind each other. A DAST full scan can hold the slot for up to 8 hours.
+- Scanner limits: at most 2 CPUs and 3 GB (profile ceilings in `runner/profiles.py` lowered to match). Semgrep 2560m with `--jobs 1 --max-memory 2000`; SpotBugs 2560m with `-maxHeap 1792`; Syft 2560m with a 1536m image tmpfs (tmpfs counts against the limit, so larger image layers fail the Syft stage); ZAP 3g with `-Xmx1280m`; Nuclei 1536m; skopeo 1g; Grype updater 1536m.
+- Profiles: `code-standard` v3 (no SonarQube, no Dependency-Check), `dast-*` v2 (lower limits). Earlier versions stay in the table; a request for `code-standard` v2 is refused because its tools are gone.
+- Always-on limits (about 5 GB together; a unit test caps them at 5.5 GB): db 1g (shared_buffers 256MB, set in `postgres/entrypoint-ssl.sh`), api 768m, worker 1g, gateway 192m, socket-proxy 64m; DefectDojo uwsgi 1g with 2 processes and 2 threads, celery worker 768m with the solo pool, celerybeat 192m, nginx 64m, valkey 128m. The DD_UWSGI_* and DD_CELERY_WORKER_* names were written from DefectDojo's entrypoints without network access; check them when the upstream Compose file is replaced.
+- Kernel settings (`vm.max_map_count`, `fs.file-max`) are no longer required or checked; `check_host.sh` asks for 4 vCPU and 8 GB.
+- Data kept: DB enum values `nvd_key`, `sonarqube_token`, `nvd_data` and the column `application_versions.sonar_project_key` stay (no migration), so old rows load. Report labels for the two tools stay for the scan history; the report's known limits now say neither tool runs.
+Reason: the user asked for the platform to run on 4 vCPU / 8 GB. SonarQube alone needs about 4 GB for its server plus 3 GB for its scanner; Dependency-Check overlaps Grype and needs a 3 GB heap and a multi-GB NVD database.
+Alternatives considered: keeping every tool except SonarQube (rejected by the user); keeping only Semgrep, Gitleaks and Grype (the user kept SpotBugs).
+Affects: `scanners/`, `deploy/`, `scripts/`, the backend runner, updaters and reports, the Settings content page, runbooks. `docs/design.md` (the Claude Doc original) must be updated to match: scanner catalogue, "What each language gets", profile example, sizing, known limits, host prerequisites.
+Existing installations: after upgrading, `docker volume rm securescan_sonarqube_data securescan_sonarqube_extensions securescan_sonarqube_logs securescan_odc_data`, `docker network rm securescan_sonarqube`, and optionally `DROP DATABASE sonarqube; DROP ROLE sonarqube;`; delete `deploy/secrets/sonarqube_*`.
+
+## 2026-10-21 — Compose 5.5 refuses `pids_limit` beside `deploy.resources.limits`
+Decision: every service in `deploy/compose.yaml` repeats its `pids_limit` as `pids` in `deploy.resources.limits`. Docker Compose 5.5 rejects the project otherwise ("can't set distinct values on 'pids_limit' and 'deploy.resources.limits.pids'"); the unchanged file of the previous commit fails the same way.
+Reason: found while validating the 4 vCPU / 8 GB resize with `docker compose config`.
+Alternatives considered: dropping `pids_limit` (the hardening test and the security checklist read it).
+Affects: `deploy/compose.yaml`.

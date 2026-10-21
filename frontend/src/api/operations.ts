@@ -1,5 +1,5 @@
 /**
- * Operations APIs used by Settings (scanner health, content feeds, the NVD key, scanner images) and by the
+ * Operations APIs used by Settings (scanner health, content feeds, scanner images) and by the
  * vendor assessment page.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -64,7 +64,7 @@ export function useScannerHealth() {
 
 // ---------------------------------------------------------------------------------- content feeds
 
-export type ContentFeed = "semgrep_rules" | "nuclei_templates" | "grype_db" | "nvd_data";
+export type ContentFeed = "semgrep_rules" | "nuclei_templates" | "grype_db";
 
 /** `ContentVersionOut`. */
 export type ContentVersion = {
@@ -97,30 +97,6 @@ export function useStartContentUpdate() {
       void client.invalidateQueries({ queryKey: ["content-versions"] });
       return client.invalidateQueries({ queryKey: ["scanner-health"] });
     },
-  });
-}
-
-export type NvdKeyStatus = {
-  configured: boolean;
-  /** `credential`, `environment` or `none` */
-  source: string;
-  mirror: boolean;
-  stored_at?: string | null;
-};
-
-export function useNvdKeyStatus() {
-  return useQuery({
-    queryKey: ["content", "nvd-key"],
-    queryFn: ({ signal }) => apiFetch<NvdKeyStatus>("/content/nvd-key", { signal }),
-  });
-}
-
-/** Store the key (write-only: the key never comes back). */
-export function useStoreNvdKey() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (key: string) => apiFetch<NvdKeyStatus>("/content/nvd-key", { method: "PUT", body: { key } }),
-    onSuccess: (status) => client.setQueryData(["content", "nvd-key"], status),
   });
 }
 

@@ -150,6 +150,7 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
   pending: "Pending",
 };
 
+/** Labels of every tool that ever ran: SonarQube and Dependency-Check stay for the scan history. */
 export const TOOL_LABELS: Record<string, string> = {
   semgrep: "Semgrep",
   gitleaks: "Gitleaks",

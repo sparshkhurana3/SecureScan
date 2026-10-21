@@ -10,14 +10,14 @@ Shorthand `sc`, `psql`: `docs/install.md`. The Settings page for scanner images 
 
 | Field | Meaning |
 | --- | --- |
-| `tool` | the catalogue tool (`semgrep`, `gitleaks`, `grype`, `sonarqube-server`, ...) or the lower-cased lock name (`squid`, `postgres`, ...) |
+| `tool` | the catalogue tool (`semgrep`, `gitleaks`, `grype`, `spotbugs`, ...) or the lower-cased lock name (`squid`, `postgres`, ...) |
 | `tag`, `digest`, `previous_tag`, `previous_digest` | what is proposed and what runs now. `reason` is `rebuild` (the same tag now has a new digest) or `new_version` (a newer tag of the same series) |
 | `scope` | `runtime`: started by the worker; approving takes effect at the next scan. `release`: part of the Compose bundle (PostgreSQL, Python, Node, nginx, the socket proxy, DefectDojo, Valkey); it cannot be approved here, it goes into `deploy/images.lock.yaml` with the next release |
 | `regression_result` | `pending` / `testing` (queued or running), `passed`, `failed`, `error` (a job failed or ran the wrong image), `skipped` (nothing could be asserted) |
 | `state` | `pending`, `active` (in use), `retired` (was active), `rejected` |
 | `lock_line` | the line to put into `deploy/images.lock.yaml` in the next release commit |
 
-What the platform will not propose: a different major version of PostgreSQL, Python, Node or DefectDojo; a SonarQube build that crosses a year boundary except from a December build (`sonarqube-upgrade.md`); the self-built SpotBugs image
+What the platform will not propose: a different major version of PostgreSQL, Python, Node or DefectDojo; the self-built SpotBugs image
 (rebuild it from new SpotBugs and Find Security Bugs releases: `scanners/spotbugs/README.md`); a digest you rejected before.
 
 ## Using the API from the browser (until the Settings page exists)
@@ -49,13 +49,12 @@ then, for example, `await call('GET', '/image-versions?state=pending')`. The end
 1. Open the pending list. Wait until no row says `pending` or `testing` for `regression_result` (a test is one scan per planted application; the first ones can take an hour).
 2. For each **runtime** proposal:
    - `passed`: the new image reported every verified expected finding. Approve.
-   - `skipped`: **nothing was asserted**: no expectation of that tool is verified yet, or the gate cannot test that image (the Syft image, the SonarQube server, squid, skopeo, ZAP, Nuclei: only Semgrep, Gitleaks, Grype, Dependency-Check, SpotBugs and the SonarQube scanner are gated, because only for those does the job record the digest that ran). Approving needs `acknowledge_skipped`, which means you tested it yourself:
+   - `skipped`: **nothing was asserted**: no expectation of that tool is verified yet, or the gate cannot test that image (the Syft image, squid, skopeo, ZAP, Nuclei: only Semgrep, Gitleaks, Grype and SpotBugs are gated, because only for those does the job record the digest that ran). Approving needs `acknowledge_skipped`, which means you tested it yourself:
      run a scan of a planted application with the candidate (or the suite by hand, `content-update-failed.md`, "Run the suite by hand"), read the job log and the findings, and only then approve. Consider verifying the expectations (`scanners/regression/README.md`) so the gate asserts something next month.
    - `failed`: the candidate lost a verified finding. Read `regression_detail.regression.results[*].missing`. Reject it, or wait for the next release of the tool. Never change the expectations to make a candidate pass without writing why in the commit (`scanners/regression/README.md`, rule 4).
    - `error`: a job failed, timed out, or the candidate image was not the one that ran. Look at the job outcome in the regression scan (application `regression-<app>`), fix the cause, request the test again.
 3. For each **release** proposal: read the note, decide whether the next release takes it, and reject the rest so the list stays short.
-4. SonarQube: approve the server and scanner proposals together (`sonarqube-upgrade.md`).
-5. After approving, check the next scan used it: `psql "select tool, image_digest, count(*) from scan_jobs where created_at > now() - interval '1 day' group by 1,2 order by 1"` shows the approved digest for the tool; each scan's detail shows the digest per job.
+4. After approving, check the next scan used it: `psql "select tool, image_digest, count(*) from scan_jobs where created_at > now() - interval '1 day' group by 1,2 order by 1"` shows the approved digest for the tool; each scan's detail shows the digest per job.
 
 ## Make it permanent
 

@@ -42,7 +42,7 @@ def test_semgrep_entry_matches_the_plan() -> None:
     entry = load_catalogue_from(REPO_SCANNERS)["semgrep"]
     assert entry.image.name == "semgrep/semgrep" and entry.image.tag == "1.179.0-nonroot"
     assert entry.user == "1000:1000"
-    assert entry.max_parallel == 2 and entry.timeout_minutes == 60
+    assert entry.max_parallel == 1 and entry.lock == "scanner" and entry.timeout_minutes == 60
     assert entry.mount_target("content") == "/content/semgrep/rules"
     assert entry.defectdojo_scan_type == "Semgrep JSON Report"
     assert entry.defectdojo_file == "semgrep.json"

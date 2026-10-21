@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks that this machine can run SecureScan: cgroup v2, kernel limits, Docker Engine and Compose versions,
+# Checks that this machine can run SecureScan: cgroup v2, Docker Engine and Compose versions,
 # time sync, memory and disk. Read-only: it changes nothing. Run it on the Linux machine before the first start
 # and after every OS or Docker upgrade:
 #
@@ -10,25 +10,23 @@
 # (backend/securescan/runner/host_check.py; SECURESCAN_HOST_CHECK=enforce refuses to start scans if one fails).
 #
 # Requirements this script checks (docs/implementation-plan.md section 2.4):
-#   cgroup v2 with the memory, pids and cpu controllers; vm.max_map_count >= 524288 and fs.file-max >= 131072
-#   (persisted in /etc/sysctl.d/99-securescan.conf); Docker Engine 29 or later (25 is the hard minimum);
-#   Docker Compose 2.24 or later; 8 vCPU / 32 GB minimum, 16 vCPU / 64 GB recommended; 100 GB free for Docker.
+#   cgroup v2 with the memory, pids and cpu controllers; Docker Engine 29 or later (25 is the hard minimum);
+#   Docker Compose 2.24 or later; 4 vCPU / 8 GB minimum (docs/decisions.md, 2026-10-21); 100 GB free for Docker.
 set -u
 
-MIN_MAX_MAP_COUNT=524288
-MIN_FILE_MAX=131072
 MIN_DOCKER_HARD=25
 MIN_DOCKER_WANTED=29
 MIN_COMPOSE=2.24
-MIN_CPUS=8
-MIN_MEM_GB=32
-REC_MEM_GB=64
+MIN_CPUS=4
+REC_CPUS=8
+# An "8 GB" machine reports about 7.6 to 7.8 GiB in MemTotal (the kernel keeps the rest), so the minimum is in MiB.
+MIN_MEM_MB=7400
+REC_MEM_MB=15000
 MIN_FREE_GB=100
 
 # Hosts of plan section 2.4 that the updaters, the GitHub poller and the image pulls need.
 NETWORK_HOSTS="github.com api.github.com login.microsoftonline.com registry-1.docker.io auth.docker.io ghcr.io quay.io
-grype.anchore.io toolbox-data.anchore.io services.nvd.nist.gov www.cisa.gov raw.githubusercontent.com
-dependency-check.github.io api.pdtm.sh search.maven.org repo1.maven.org"
+grype.anchore.io toolbox-data.anchore.io raw.githubusercontent.com api.pdtm.sh"
 
 FAILS=0
 WARNS=0
@@ -42,12 +40,6 @@ version_ge() {
   a=${1#v}
   b=${2#v}
   [ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | head -n 1)" = "$b" ]
-}
-
-read_int() {
-  # read_int FILE: the first integer in FILE, empty when it cannot be read
-  [ -r "$1" ] || return 1
-  tr -dc '0-9\n' < "$1" | head -n 1
 }
 
 check_os() {
@@ -77,24 +69,6 @@ check_cgroup() {
       *) if [ "$c" = cpu ]; then warn "cgroup controller cpu is not available: CPU limits will not be enforced."; else fail "cgroup controller $c is not available: its limit will not be enforced."; fi ;;
     esac
   done
-}
-
-check_sysctl() {
-  # check_sysctl NAME PATH MIN
-  name=$1
-  path=$2
-  min=$3
-  value=$(read_int "$path" || true)
-  if [ -z "$value" ]; then
-    warn "Could not read $name ($path)."
-  elif [ "$value" -ge "$min" ]; then
-    ok "$name = $value (needs $min)"
-  else
-    fail "$name = $value, below $min. Add it to /etc/sysctl.d/99-securescan.conf and run: sudo sysctl --system"
-  fi
-  if ! grep -rqs "^[[:space:]]*$name[[:space:]]*=" /etc/sysctl.conf /etc/sysctl.d /usr/lib/sysctl.d 2>/dev/null; then
-    warn "$name is not set in /etc/sysctl.d, so it will not survive a reboot."
-  fi
 }
 
 check_docker() {
@@ -143,10 +117,10 @@ check_docker() {
 
 check_resources() {
   cpus=$(nproc 2>/dev/null || echo 0)
-  if [ "$cpus" -ge 16 ]; then ok "$cpus CPUs"; elif [ "$cpus" -ge "$MIN_CPUS" ]; then warn "$cpus CPUs: enough for the minimum, 16 are recommended."; else fail "$cpus CPUs; the minimum is $MIN_CPUS."; fi
+  if [ "$cpus" -ge "$REC_CPUS" ]; then ok "$cpus CPUs"; elif [ "$cpus" -ge "$MIN_CPUS" ]; then ok "$cpus CPUs (the minimum; scans run one at a time)"; else fail "$cpus CPUs; the minimum is $MIN_CPUS."; fi
   mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
-  mem_gb=$((mem_kb / 1024 / 1024))
-  if [ "$mem_gb" -ge "$REC_MEM_GB" ]; then ok "$mem_gb GB memory"; elif [ "$mem_gb" -ge "$MIN_MEM_GB" ]; then warn "$mem_gb GB memory: enough for the minimum, $REC_MEM_GB GB are recommended."; else fail "$mem_gb GB memory; the minimum is $MIN_MEM_GB GB (SonarQube and Dependency-Check need it)."; fi
+  mem_mb=$((mem_kb / 1024))
+  if [ "$mem_mb" -ge "$REC_MEM_MB" ]; then ok "$mem_mb MB memory"; elif [ "$mem_mb" -ge "$MIN_MEM_MB" ]; then ok "$mem_mb MB memory (the minimum; scans run one at a time)"; else fail "$mem_mb MB memory; the minimum is an 8 GB machine ($MIN_MEM_MB MB visible)."; fi
   swap_kb=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
   if [ "$swap_kb" -gt 0 ]; then warn "Swap is on. Container memory limits then allow swapping; consider swapoff or vm.swappiness=1."; fi
 }
@@ -184,8 +158,6 @@ main() {
   check_os
   [ "$(uname -s)" = "Linux" ] || { printf '\n%d failure(s), %d warning(s)\n' "$FAILS" "$WARNS"; return 1; }
   check_cgroup
-  check_sysctl vm.max_map_count /proc/sys/vm/max_map_count "$MIN_MAX_MAP_COUNT"
-  check_sysctl fs.file-max /proc/sys/fs/file-max "$MIN_FILE_MAX"
   check_docker
   check_resources
   check_time

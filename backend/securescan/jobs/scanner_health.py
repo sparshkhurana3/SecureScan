@@ -8,18 +8,15 @@
   metric of plan M8 task 6); ``securescan_content_update_last_success_timestamp{feed}`` is the last success.
 * ``securescan_feed_stale{feed}`` is 1 when the active version is older than its limit (7 days for the
   vulnerability databases, 30 days for rules and templates; design "Observability").
-* Dependency-Check cannot read its data while the updater rewrites it, so scans wait for ``feed_updating`` to end.
 
-Age of a feed: databases (``grype_db``, ``nvd_data``) are as old as the day the upstream built them
+Age of a feed: the database (``grype_db``) is as old as the day the upstream built them
 (``built_at``); rules and templates are as old as the last successful check or fetch (``fetched_at``), because
 upstream may legitimately have no newer commit.
 """
 
 from __future__ import annotations
 
-import asyncio
 import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -40,24 +37,21 @@ from securescan.util import ensure_utc, utcnow
 
 log = get_logger(__name__)
 
-DATABASE_FEEDS = (ContentFeed.GRYPE_DB, ContentFeed.NVD_DATA)
+DATABASE_FEEDS = (ContentFeed.GRYPE_DB,)
 CONTENT_FEEDS = (ContentFeed.SEMGREP_RULES, ContentFeed.NUCLEI_TEMPLATES)
 ALL_FEEDS = (
     ContentFeed.GRYPE_DB,
-    ContentFeed.NVD_DATA,
     ContentFeed.SEMGREP_RULES,
     ContentFeed.NUCLEI_TEMPLATES,
 )
 FEED_LABELS = {
     ContentFeed.GRYPE_DB.value: "Grype vulnerability database",
-    ContentFeed.NVD_DATA.value: "Dependency-Check NVD data",
     ContentFeed.SEMGREP_RULES.value: "Semgrep rules",
     ContentFeed.NUCLEI_TEMPLATES.value: "Nuclei templates",
 }
 # The scan tool that reads each feed.
 FEED_TOOLS = {
     ContentFeed.GRYPE_DB.value: "syft-grype",
-    ContentFeed.NVD_DATA.value: "dependency-check",
     ContentFeed.SEMGREP_RULES.value: "semgrep",
     ContentFeed.NUCLEI_TEMPLATES.value: "nuclei",
 }
@@ -83,7 +77,6 @@ FEED_STALE = Gauge(
 
 _reference_times: dict[str, float] = {}
 _failed: dict[str, bool] = {}
-_updating: set[str] = set()
 
 
 # --------------------------------------------------------------------------- pure helpers
@@ -223,16 +216,6 @@ async def refresh_feed_clocks(session: AsyncSession) -> dict[str, FeedStatus]:
     return statuses
 
 
-async def tool_busy(session: AsyncSession, tool: str) -> bool:
-    """True while a job of ``tool`` is preparing or running."""
-    count = await session.scalar(
-        select(func.count())
-        .select_from(ScanJob)
-        .where(ScanJob.tool == tool, ScanJob.state.in_([JobState.PREPARING, JobState.RUNNING]))
-    )
-    return bool(count)
-
-
 async def last_runs_by_tool(session: AsyncSession) -> dict[str, dict[str, datetime | None]]:
     """``{tool: {"success": last good finish, "failure": last failed or timed-out finish}}``."""
     result: dict[str, dict[str, datetime | None]] = {}
@@ -263,42 +246,6 @@ async def approved_images(session: AsyncSession) -> dict[str, ImageVersion]:
         )
     ).all()
     return {row.tool: row for row in rows}  # later rows (newer approval) overwrite earlier ones
-
-
-# --------------------------------------------------------------------------- update exclusion
-class FeedUpdate:
-    """``async with FeedUpdate("nvd_data"):`` marks the feed as being rewritten (single worker process)."""
-
-    def __init__(self, feed: ContentFeed | str) -> None:
-        self.feed = feed_value(feed)
-
-    async def __aenter__(self) -> FeedUpdate:
-        _updating.add(self.feed)
-        return self
-
-    async def __aexit__(self, *_exc: object) -> None:
-        _updating.discard(self.feed)
-
-
-def feed_updating(feed: ContentFeed | str) -> bool:
-    return feed_value(feed) in _updating
-
-
-async def wait_feed_idle(
-    feed: ContentFeed | str,
-    timeout_s: float,
-    *,
-    interval_s: float = 15.0,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-    clock: Callable[[], float] = time.monotonic,
-) -> bool:
-    """Wait until ``feed`` is no longer being updated. True when it is idle, False on timeout."""
-    started = clock()
-    while feed_updating(feed):
-        if clock() - started >= timeout_s:
-            return False
-        await sleep(interval_s)
-    return True
 
 
 # --------------------------------------------------------------------------- worker start-up

@@ -24,6 +24,4 @@ tools:
       verified: false
       note: "Planted secret is certain; detection by the default Gitleaks rules depends on keyword and entropy rules."
   grype: []              # package.json has no lock file here: Syft may catalogue nothing. Fill after the first S7 run.
-  dependency-check: []   # same reason; fill after the first S7 run.
   spotbugs: []           # not applicable: no Java classes
-  sonarqube: []          # fill after spike S3 (issue versus security hotspot classification is not known yet)

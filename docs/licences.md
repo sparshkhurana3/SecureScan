@@ -7,13 +7,10 @@ Status "to verify" means the entry comes from the design research of 5-6 October
 | --- | --- | --- | --- |
 | Semgrep Community Edition engine | LGPL-2.1 | Scanner container | to verify |
 | Semgrep rules (semgrep-rules) | Semgrep Rules License v1.0 (not open source) | Internal use only; keep notices; never offer for download; exclude AGPL `trailofbits.*` rules | to verify |
-| SonarQube Community Build platform | LGPL-3.0 | On-demand server | to verify |
-| SonarQube analyzers | Sonar Source-Available License v1 | Internal use; no output to external AI services | to verify |
 | SpotBugs | LGPL-2.1 | Self-built scanner image | to verify |
 | Find Security Bugs | LGPL-3.0 | Self-built scanner image | to verify |
 | Gitleaks | MIT | Scanner container (maintenance mode) | to verify |
 | Syft, Grype | Apache-2.0 | Scanner containers | to verify |
-| OWASP Dependency-Check | Apache-2.0 | Scanner container | to verify |
 | ZAP | Apache-2.0 | Scanner container | to verify |
 | Nuclei engine and templates | MIT | Scanner container | to verify |
 | DefectDojo (open source) | BSD-3-Clause | Bundled service | to verify |

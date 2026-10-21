@@ -19,20 +19,17 @@ from securescan.api.problems import install_problem_handlers
 from securescan.auth.roles import CurrentUser, current_user
 from securescan.config import Settings, get_settings
 from securescan.db.models.content import ContentVersion
-from securescan.db.models.enums import ContentFeed, CredentialKind, UserRole
+from securescan.db.models.enums import ContentFeed, UserRole
 from securescan.db.session import get_session
 from securescan.jobs import scanner_health as health
 from securescan.jobs.scanner_health import (
-    FeedUpdate,
     age_seconds,
     feed_status,
-    feed_updating,
     is_stale,
     limit_days,
     record_feed_clock,
     record_update_result,
     reference_time,
-    wait_feed_idle,
 )
 from securescan.observability import metrics
 from securescan.runner.catalogue import clear_catalogue_cache
@@ -46,10 +43,9 @@ NOW = datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)
 
 @pytest.fixture(autouse=True)
 def clean_health_state() -> None:
-    """The feed clocks, failure flags and update marks are process-wide: start every test without them."""
+    """The feed clocks and failure flags are process-wide: start every test without them."""
     health._failed.clear()
     health._reference_times.clear()
-    health._updating.clear()
 
 
 def row(**values: Any) -> Any:
@@ -61,7 +57,7 @@ def row(**values: Any) -> Any:
 
 # --------------------------------------------------------------------------- limits and ages
 def test_limits_follow_the_design() -> None:
-    assert limit_days(ContentFeed.GRYPE_DB) == 7 and limit_days("nvd_data") == 7
+    assert limit_days(ContentFeed.GRYPE_DB) == 7
     assert limit_days(ContentFeed.SEMGREP_RULES) == 30 and limit_days("nuclei_templates") == 30
     assert limit_days("grype_db", Settings(feed_max_age_days_database=3)) == 3  # type: ignore[call-arg]
 
@@ -114,44 +110,14 @@ def test_the_feed_age_gauge_keeps_counting_between_updates() -> None:
 
 
 def test_the_update_alert_metric_is_set_on_failure_and_cleared_on_success() -> None:
-    record_update_result(ContentFeed.NVD_DATA, False)
-    assert sample("securescan_content_update_failed", "nvd_data") == 1.0
-    assert feed_status(ContentFeed.NVD_DATA, row(), now=NOW).update_failed is True
+    record_update_result(ContentFeed.GRYPE_DB, False)
+    assert sample("securescan_content_update_failed", "grype_db") == 1.0
+    assert feed_status(ContentFeed.GRYPE_DB, row(), now=NOW).update_failed is True
     before = time.time()
-    record_update_result("nvd_data", True)
-    assert sample("securescan_content_update_failed", "nvd_data") == 0.0
-    assert (sample("securescan_content_update_last_success_timestamp", "nvd_data") or 0) >= before - 1
-    assert feed_status(ContentFeed.NVD_DATA, row(), now=NOW).update_failed is False
-
-
-# --------------------------------------------------------------------------- scans wait for an update
-async def test_scans_wait_while_a_feed_is_being_updated() -> None:
-    assert not feed_updating(ContentFeed.NVD_DATA) and await wait_feed_idle(ContentFeed.NVD_DATA, 10) is True
-    async with FeedUpdate(ContentFeed.NVD_DATA):
-        assert feed_updating("nvd_data")
-        slept: list[float] = []
-        clock = {"now": 0.0}
-
-        async def sleep(seconds: float) -> None:
-            slept.append(seconds)
-            clock["now"] += seconds
-
-        assert await wait_feed_idle("nvd_data", 45, interval_s=15, sleep=sleep, clock=lambda: clock["now"]) is False
-        assert slept == [15, 15, 15]
-    assert not feed_updating("nvd_data")
-
-    async def sleep_then_finish(seconds: float) -> None:
-        health._updating.discard("nvd_data")
-
-    health._updating.add("nvd_data")
-    assert await wait_feed_idle("nvd_data", 60, interval_s=1, sleep=sleep_then_finish) is True
-
-
-async def test_a_failed_update_still_releases_the_feed() -> None:
-    with pytest.raises(RuntimeError):
-        async with FeedUpdate(ContentFeed.GRYPE_DB):
-            raise RuntimeError("boom")
-    assert not feed_updating(ContentFeed.GRYPE_DB)
+    record_update_result("grype_db", True)
+    assert sample("securescan_content_update_failed", "grype_db") == 0.0
+    assert (sample("securescan_content_update_last_success_timestamp", "grype_db") or 0) >= before - 1
+    assert feed_status(ContentFeed.GRYPE_DB, row(), now=NOW).update_failed is False
 
 
 # --------------------------------------------------------------------------- the endpoints
@@ -220,7 +186,8 @@ def test_scanner_health_lists_tools_digests_and_feed_ages(monkeypatch: pytest.Mo
     assert response.status_code == 200, response.text
     body = response.json()
     tools = {t["tool"]: t for t in body["tools"]}
-    assert {"semgrep", "gitleaks", "syft-grype", "dependency-check", "spotbugs", "sonarqube"} <= set(tools)
+    assert {"semgrep", "gitleaks", "syft-grype", "spotbugs"} <= set(tools)
+    assert not {"dependency-check", "sonarqube", "sonarqube-server"} & set(tools)
     semgrep = tools["semgrep"]
     assert semgrep["role"] == "scanner" and semgrep["feed"] == "semgrep_rules"
     assert semgrep["digest"] == "sha256:" + "c" * 64 and semgrep["digest_source"] == "override", "an approved image wins"
@@ -229,13 +196,13 @@ def test_scanner_health_lists_tools_digests_and_feed_ages(monkeypatch: pytest.Mo
     grype = tools["syft-grype"]
     assert grype["digest"] == "sha256:" + "a" * 64 and grype["digest_source"] == "env" and grype["last_failure_at"] is not None
     assert tools["gitleaks"]["digest_source"] == "unresolved" and tools["gitleaks"]["digest"] is None
-    assert tools["skopeo"]["role"] == "support" and tools["sonarqube-server"]["role"] == "support"
+    assert tools["skopeo"]["role"] == "support" and tools["grype-db-update"]["role"] == "support"
     assert [t["role"] for t in body["tools"]] == sorted((t["role"] for t in body["tools"]), key=lambda r: r != "scanner")
     feeds = {f["feed"]: f for f in body["feeds"]}
-    assert set(feeds) == {"grype_db", "nvd_data", "semgrep_rules", "nuclei_templates"}
+    assert set(feeds) == {"grype_db", "semgrep_rules", "nuclei_templates"}
     assert feeds["grype_db"]["stale"] is True and feeds["grype_db"]["limit_days"] == 7
     assert feeds["semgrep_rules"]["stale"] is False and feeds["semgrep_rules"]["limit_days"] == 30
-    assert feeds["nvd_data"]["version"] is None and feeds["nvd_data"]["stale"] is True
+    assert feeds["nuclei_templates"]["version"] is None and feeds["nuclei_templates"]["stale"] is True
     assert body["status"] == "attention" and any("Needs attention" in n for n in body["notes"])
 
 
@@ -309,6 +276,7 @@ def test_an_update_can_be_started_by_an_admin_only(monkeypatch: pytest.MonkeyPat
     assert second.status_code == 202 and second.json()["queued"] is False
     assert db.commits == 2 and any(getattr(a, "action", "") == "content.update_requested" for a in db.added)
     assert client.post("/api/v1/content-versions/updates", json={"feed": "bogus"}).status_code == 422
+    assert client.post("/api/v1/content-versions/updates", json={"feed": "nvd_data"}).status_code == 422, "retired feed"
     denied = build_client(UserRole.ANALYST)[0].post("/api/v1/content-versions/updates", json={"feed": "grype_db"})
     assert denied.status_code == 403
 
@@ -320,52 +288,5 @@ def test_an_unreachable_queue_is_a_503(monkeypatch: pytest.MonkeyPatch) -> None:
         raise ConnectionError("no database")
 
     monkeypatch.setattr(enqueue, "defer", defer)
-    response = build_client()[0].post("/api/v1/content-versions/updates", json={"feed": "nvd_data"})
+    response = build_client()[0].post("/api/v1/content-versions/updates", json={"feed": "grype_db"})
     assert response.status_code == 503 and response.json()["code"] == "content.queue_unavailable"
-
-
-# --------------------------------------------------------------------------- the NVD key
-KEY = "0a1b2c3d-4e5f-6789-abcd-ef0123456789"
-
-
-def test_the_nvd_key_is_stored_encrypted_and_never_returned(master_key: str) -> None:
-    client, db = build_client()
-    assert client.get("/api/v1/content/nvd-key").json() == {"configured": False, "source": "none", "mirror": False, "stored_at": None}
-    response = client.put("/api/v1/content/nvd-key", json={"key": KEY})
-    assert response.status_code == 200, response.text
-    assert response.json()["configured"] is True and response.json()["source"] == "credential"
-    assert KEY not in response.text
-    credential = db.added[0]
-    assert credential.kind == CredentialKind.NVD_KEY and KEY not in credential.ciphertext and credential.name == "NVD API key"
-    audit = [a for a in db.added if getattr(a, "action", "") == "credential.create"]
-    assert audit and KEY not in str(audit[0].detail)
-    status = client.get("/api/v1/content/nvd-key").json()
-    assert status["configured"] is True and status["source"] == "credential" and KEY not in str(status)
-
-
-def test_a_new_nvd_key_revokes_the_older_one(master_key: str) -> None:
-    old = types.SimpleNamespace(revoked_at=None)
-    client, db = build_client(session=FakeSession(rows=[old]))
-    assert client.put("/api/v1/content/nvd-key", json={"key": KEY}).status_code == 200
-    assert old.revoked_at is not None
-
-
-def test_the_environment_key_is_reported_as_such(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESCAN_NVD_API_KEY", KEY)
-    monkeypatch.setenv("SECURESCAN_NVD_DATAFEED_URL", "https://mirror.example.com/nvd")
-    get_settings.cache_clear()
-    status = build_client()[0].get("/api/v1/content/nvd-key").json()
-    assert status == {"configured": True, "source": "environment", "mirror": True, "stored_at": None}
-
-
-@pytest.mark.parametrize("key", ["short", "has space in it", "line\nbreak", "x" * 300, ""])
-def test_a_malformed_nvd_key_is_refused(key: str, master_key: str) -> None:
-    client, db = build_client()
-    assert client.put("/api/v1/content/nvd-key", json={"key": key}).status_code == 422
-    assert db.added == []
-
-
-def test_the_nvd_key_endpoints_are_for_admins_only(master_key: str) -> None:
-    client, _db = build_client(UserRole.ANALYST)
-    assert client.get("/api/v1/content/nvd-key").status_code == 403
-    assert client.put("/api/v1/content/nvd-key", json={"key": KEY}).status_code == 403

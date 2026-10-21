@@ -23,9 +23,8 @@ FILE_SUFFIX = "_FILE"
 # Hosts the on-demand egress proxy lets the worker's own updaters reach (plan section 2.4).
 DEFAULT_UPDATER_HOSTS = (
     "github.com,api.github.com,codeload.github.com,objects.githubusercontent.com,"
-    "raw.githubusercontent.com,grype.anchore.io,toolbox-data.anchore.io,"
-    "services.nvd.nist.gov,www.cisa.gov,dependency-check.github.io,api.pdtm.sh,"
-    "search.maven.org,repo1.maven.org,registry-1.docker.io,auth.docker.io,ghcr.io,quay.io"
+    "raw.githubusercontent.com,grype.anchore.io,toolbox-data.anchore.io,api.pdtm.sh,"
+    "registry-1.docker.io,auth.docker.io,ghcr.io,quay.io"
 )
 
 
@@ -91,7 +90,6 @@ class Settings(BaseSettings):
     content_root: str = "/var/lib/securescan/content"
     scanners_dir: str = ""  # directory holding catalogue.yaml; empty: find it next to the package
     network_backend: str = "securescan_backend"
-    network_sonarqube: str = "securescan_sonarqube"
     network_dast: str = "securescan_dast"
     network_egress: str = "securescan_egress"
 
@@ -137,12 +135,6 @@ class Settings(BaseSettings):
     defectdojo_account_expiry_days: int = 90  # unused DefectDojo accounts are disabled
     defectdojo_init_wait_seconds: int = 900  # dojo-init waits this long for DefectDojo
 
-    # --- SonarQube (M8) --------------------------------------------------------------------------
-    sonarqube_url: str = "http://sonarqube:9000"
-    sonarqube_container: str = "sonarqube"
-    sonarqube_idle_minutes: int = 15
-    sonarqube_admin_password: str = ""
-
     # --- egress (M7, M8) -------------------------------------------------------------------------
     egress_idle_minutes: int = 5
     egress_proxy_url: str = "http://securescan-egress:3128"
@@ -163,8 +155,6 @@ class Settings(BaseSettings):
 
     # --- operations (M11) ------------------------------------------------------------------------
     host_check: str = "auto"  # auto (enforce in production, warn in dev/test) | enforce | warn | off
-    host_min_max_map_count: int = 524288  # vm.max_map_count (SonarQube's search engine)
-    host_min_file_max: int = 131072  # fs.file-max
     host_min_docker_major: int = 29  # Docker Engine major version the install guide asks for (warning below)
     host_min_docker_api: str = "1.44"  # the API version the launcher speaks (blocking below)
     backup_status_file: str = "/var/lib/securescan/backup/status.json"  # written by scripts/backup.sh
@@ -180,27 +170,9 @@ class Settings(BaseSettings):
     dast_max_rps: int = 100  # upper bound for a target's request-rate cap
     dast_proxy_ready_seconds: int = 20  # how long the worker waits for a job's squid to stay up
 
-    # --- code scanners, SonarQube, content and updaters (M8) ------------------------------------------
-    sonarqube_start_timeout_seconds: int = 600  # wait for GET /api/system/status == UP
-    sonarqube_ce_timeout_seconds: int = 1800  # wait for the compute-engine task after the scanner ends
-    sonarqube_read_only_rootfs: bool = True  # false if the pinned build does not start read-only
-    sonarqube_db_user: str = "sonarqube"
-    sonarqube_db_password: str = ""  # SONARQUBE_DB_PASSWORD_FILE (the sonarqube_db_password secret)
-    sonarqube_jdbc_url: str = (
-        "jdbc:postgresql://db:5432/sonarqube"
-        "?ssl=true&sslmode=verify-full&sslrootcert=/opt/sonarqube/conf/db-ca.crt"
-    )
-    sonarqube_db_ca_file: str = "/run/secrets/tls_ca"  # copied next to the server's configuration
-    sonarqube_service_user: str = "securescan-sonar"
-    sonarqube_volume_data: str = "securescan_sonarqube_data"
-    sonarqube_volume_extensions: str = "securescan_sonarqube_extensions"
-    sonarqube_volume_logs: str = "securescan_sonarqube_logs"
-    sonarqube_empty_binaries_fallback: bool = False  # Java without classes: point sonar.java.binaries at an empty dir
+    # --- code scanners, content and updaters (M8) ----------------------------------------------------
     grype_db_max_age: str = "120h"  # GRYPE_DB_MAX_ALLOWED_BUILT_AGE of scan containers (stale database fails the job)
     grype_db_read_only: bool = False  # mount the Grype database read-only into scans (confirm with spike S7)
-    odc_data_read_only: bool = False  # same for the Dependency-Check data (H2 normally needs write access)
-    nvd_api_key: str = ""  # NVD_API_KEY_FILE; a stored credential of kind nvd_key wins
-    nvd_datafeed_url: str = ""  # --nvdDatafeed mirror for the Dependency-Check update
     semgrep_rules_commit: str = ""  # pins the semgrep-rules commit (else content/semgrep-rules.lock)
     semgrep_rules_lock_file: str = ""  # path of semgrep-rules.lock; empty: look next to the scanners directory
     content_bootstrap: bool = True  # worker start-up defers the first update of every empty feed

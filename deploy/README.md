@@ -6,12 +6,10 @@ Full installation guide: `docs/install.md` (written in M11). This file holds wha
 
 - Docker Engine 29 or later and Docker Compose 2.24 or later (repeated `--env-file` and the `include` element).
 - cgroup v2 (the Ubuntu 24.04 default) so container CPU, memory and PID limits are enforced.
-- Kernel settings for SonarQube, persisted in `/etc/sysctl.d/99-securescan.conf`:
-  `vm.max_map_count=524288` and `fs.file-max=131072`, then `sudo sysctl --system`. Needed from spike S3 on.
 - Outbound HTTPS to the hosts listed in `docs/implementation-plan.md` section 2.4.
 - DNS names for the portal and DefectDojo under one parent domain, and a TLS certificate whose subject alternative names
   cover both hosts and `db`.
-- Recommended machine: 16 vCPU, 64 GB RAM, 500 GB SSD (minimum 8 vCPU, 32 GB).
+- Machine: 4 vCPU, 8 GB RAM, 500 GB SSD. Scans run one at a time (docs/decisions.md, 2026-10-21).
 
 ## First start
 

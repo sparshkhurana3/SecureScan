@@ -30,7 +30,7 @@ from tests.unit.runner_helpers import DIGEST, REPO_SCANNERS, make_ctx
 SEMGREP_PLAN_COMMAND = (
     "semgrep scan --config /content/semgrep/rules --metrics=off --disable-version-check "
     "--json-output=/out/semgrep.json --sarif-output=/out/semgrep.sarif --timeout 30 "
-    "--timeout-threshold 3 --max-memory 3000 --jobs 2 /src"
+    "--timeout-threshold 3 --max-memory 2000 --jobs 1 /src"
 ).split()
 GITLEAKS_PLAN_COMMAND = (
     "gitleaks git /src --redact --config /config/gitleaks.toml --ignore-gitleaks-allow "
@@ -81,12 +81,12 @@ def test_helpers() -> None:
     assert normalise_user("root:root") == "0:0"
     assert normalise_user("1000:1000") == "1000:1000"
     assert container_name("abc") == "securescan-job-abc"
-    settings = Settings(network_sonarqube="sq", network_dast="dd")
+    settings = Settings(network_dast="dd")
     assert docker_network(settings, "none") == "none"
-    assert docker_network(settings, "sonarqube") == "sq"
     assert docker_network(settings, "dast") == "dd"
-    with pytest.raises(ToolPreparationError):
-        docker_network(settings, "host")
+    for removed in ("host", "sonarqube"):
+        with pytest.raises(ToolPreparationError):
+            docker_network(settings, removed)
     assert insert_before_target(["a", "/src"], ["--x", "1"], "/src") == ["a", "--x", "1", "/src"]
     assert insert_before_target(["a", "b"], ["--x"], "/src") == ["a", "b", "--x"]
     assert insert_before_target(["a", "/src"], [], "/src") == ["a", "/src"]
@@ -155,7 +155,7 @@ async def test_semgrep_container_spec_is_hardened_and_built_from_the_catalogue()
     assert spec.read_only_rootfs is True
     assert spec.entrypoint == [""]
     assert spec.name == f"securescan-job-{ctx.job.id}"
-    assert spec.mem_limit == "4g" and spec.nano_cpus == 2_000_000_000 and spec.pids_limit == 256
+    assert spec.mem_limit == "2560m" and spec.nano_cpus == 2_000_000_000 and spec.pids_limit == 256
     assert spec.tmpfs == {"/tmp": "rw,size=512m,mode=1777"}  # noqa: S108
     assert spec.binds == [
         (str(ctx.workspace.src), "/src", True),

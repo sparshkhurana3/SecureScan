@@ -245,7 +245,7 @@ def test_code_quality_from_the_sonarqube_job() -> None:
 def test_code_quality_is_absent_without_sonarqube() -> None:
     quality = _build([]).code_quality
     assert not quality.available
-    assert "did not run" in quality.note
+    assert "not part of this installation" in quality.note
 
 
 def test_code_quality_accepts_a_plain_status_and_a_measure_list() -> None:

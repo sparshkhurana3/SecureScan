@@ -69,13 +69,6 @@ async def grype_db_update(timestamp: int) -> None:
     await run_periodic("grype_db_update", timestamp)
 
 
-@app.periodic(cron="0 3 * * *")
-@app.task(name="nvd_update", queue="maintenance", queueing_lock="nvd_update")
-async def nvd_update(timestamp: int) -> None:
-    """M8: update the Dependency-Check NVD data."""
-    await run_periodic("nvd_update", timestamp)
-
-
 @app.periodic(cron="0 3 * * 6")
 @app.task(
     name="rules_and_templates_update",
@@ -111,13 +104,6 @@ async def credential_expiry_alerts(timestamp: int) -> None:
         count = await run_expiry_alerts(db)
     log.info("credential_expiry_alerts", expiring=count)
     await run_periodic("credential_expiry_alerts", timestamp)
-
-
-@app.periodic(cron="*/5 * * * *")
-@app.task(name="sonarqube_idle_stop", queue="maintenance", queueing_lock="sonarqube_idle_stop")
-async def sonarqube_idle_stop(timestamp: int) -> None:
-    """M8: stop the SonarQube server after 15 idle minutes."""
-    await run_periodic("sonarqube_idle_stop", timestamp)
 
 
 @app.periodic(cron="*/5 * * * *")

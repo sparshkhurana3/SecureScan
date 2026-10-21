@@ -33,6 +33,4 @@ tools:
       expect_category: "known vulnerabilities in flask 0.12"
       file: requirements.txt
       verified: false
-  dependency-check: []   # Dependency-Check does not read requirements.txt as far as is known; fill after S7.
   spotbugs: []           # not applicable: no Java classes
-  sonarqube: []          # fill after spike S3

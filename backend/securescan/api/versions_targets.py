@@ -46,7 +46,6 @@ class VersionOut(ORMModel):
     description: str | None
     commit_sha: str | None
     dd_engagement_id: int | None
-    sonar_project_key: str | None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

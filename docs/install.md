@@ -19,8 +19,8 @@ alias sc='docker compose --project-directory deploy --env-file deploy/.env --env
 
 | Item | Detail |
 | --- | --- |
-| Machine | 64-bit Linux with systemd and cgroup v2. Ubuntu 24.04 LTS is the reference. Recommended 16 vCPU, 64 GB RAM, 500 GB SSD; minimum 8 vCPU, 32 GB. Disks of the database and artifact volumes encrypted at rest (design, "Data protection"). |
-| Network, outbound HTTPS | github.com, api.github.com, codeload.github.com, objects.githubusercontent.com, raw.githubusercontent.com, login.microsoftonline.com, registry-1.docker.io, auth.docker.io, ghcr.io, quay.io, grype.anchore.io, toolbox-data.anchore.io, services.nvd.nist.gov, www.cisa.gov, dependency-check.github.io, api.pdtm.sh, search.maven.org, repo1.maven.org. `bash scripts/check_host.sh --network` tests them. If the organisation uses a GitHub IP allow list, add the machine's egress address. |
+| Machine | 64-bit Linux with systemd and cgroup v2. Ubuntu 24.04 LTS is the reference. 4 vCPU, 8 GB RAM, 500 GB SSD: the stack is sized for that machine and runs one scanner container at a time (`docs/decisions.md`, 2026-10-21). More CPU or memory does not make scans run in parallel by itself; see `docs/runbooks/performance.md`. Disks of the database and artifact volumes encrypted at rest (design, "Data protection"). |
+| Network, outbound HTTPS | github.com, api.github.com, codeload.github.com, objects.githubusercontent.com, raw.githubusercontent.com, login.microsoftonline.com, registry-1.docker.io, auth.docker.io, ghcr.io, quay.io, grype.anchore.io, toolbox-data.anchore.io, api.pdtm.sh. `bash scripts/check_host.sh --network` tests them. If the organisation uses a GitHub IP allow list, add the machine's egress address. |
 | Network, inbound | One TCP port (443) from the corporate network to the gateway. Nothing from the internet. |
 | DNS | Two names under one parent domain, for example `securescan.corp.example` (portal) and `dojo.securescan.corp.example` (DefectDojo). |
 | Certificate | From the corporate CA, with subject alternative names for both host names **and** `db` (the same certificate secures the PostgreSQL connections, which are verified with `sslmode=verify-full`). |
@@ -28,7 +28,6 @@ alias sc='docker compose --project-directory deploy --env-file deploy/.env --env
 | GitHub | An owner of the corporate GitHub organisation who may register and install a GitHub App (section 6). |
 | People | A named owner for each of the three jobs that cannot be automated (design, "What still needs an owner"). |
 | Off-machine backup target | An SSH-reachable host with free space, or a mounted network share (section 11). A machine that is its own only backup is not a backup. |
-| NVD API key | Free, from nvd.nist.gov; entered later in Settings. |
 
 ## 2. Prepare the machine
 
@@ -48,17 +47,9 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 Node, Python 3.14 and `uv` are **not** needed on the machine: the backend and the portal are built inside Docker from the lock files
 that are committed to the release.
 
-### 2.2 Kernel settings and the host check
+### 2.2 Container logs and the host check
 
-```
-sudo tee /etc/sysctl.d/99-securescan.conf >/dev/null <<'EOF'
-vm.max_map_count=524288
-fs.file-max=131072
-EOF
-sudo sysctl --system
-```
-
-Limit and rotate container logs (Docker keeps them forever by default), and ship them to the corporate log pipeline through the
+No kernel settings are needed (they were for SonarQube, which this installation does not run). Limit and rotate container logs (Docker keeps them forever by default), and ship them to the corporate log pipeline through the
 driver your SIEM expects (the audit events are log lines with `event=audit`):
 
 ```
@@ -75,7 +66,7 @@ git clone <the release repository> /opt/securescan && cd /opt/securescan && git 
 bash scripts/check_host.sh --network
 ```
 
-The worker repeats the checks it can see from inside its container every time it starts. If cgroup v2, `vm.max_map_count` or the Docker
+The worker repeats the checks it can see from inside its container every time it starts. If cgroup v2 or the Docker
 version is wrong it **refuses to start** (`docker logs securescan-worker-1` says which); `SECURESCAN_HOST_CHECK=warn` in `deploy/.env`
 only lets you diagnose.
 
@@ -86,7 +77,7 @@ Check: `bash scripts/check_host.sh` prints no `[FAIL]`.
 1. Create the two DNS records pointing at the machine.
 2. Issue one certificate whose subject alternative names are `securescan.corp.example`, `dojo.securescan.corp.example` and `db`.
 3. Put the files in `deploy/secrets/tls/`: `server.crt` (certificate plus intermediates), `server.key`, `ca.crt` (the corporate root and
-   intermediate CA that signed it; DefectDojo, SonarQube and SecureScan verify PostgreSQL against it).
+   intermediate CA that signed it; DefectDojo and SecureScan verify PostgreSQL against it).
 
 ```
 sudo install -d -m 0700 deploy/secrets deploy/secrets/tls
@@ -210,13 +201,13 @@ sc logs -f dojo-init                         # "nothing to change" or the list o
 ```
 
 DefectDojo needs a few minutes on its first start (database migration). Expected always-on containers: `gateway`, `api`, `worker`, `db`,
-`socket-proxy`, DefectDojo's `nginx`, `uwsgi`, `celerybeat`, `celeryworker`, `valkey`. No scanner, SonarQube server or proxy runs until a job needs it.
+`socket-proxy`, DefectDojo's `nginx`, `uwsgi`, `celerybeat`, `celeryworker`, `valkey`. No scanner or proxy runs until a job needs it.
 
 ### Smoke test (30 minutes)
 
 1. Open `https://securescan.corp.example/`, sign in as an Admin. Settings -> System health shows no red item.
 2. Settings -> GitHub connection: enter the App values, press Test, press Discover; repositories appear.
-3. Enter the NVD API key in Settings (credentials) and let the first updates run: Grype's database at 07:30 UTC, the NVD data at 03:00 UTC (the first NVD download takes 20 minutes or more; Dependency-Check scans wait for it). The scanner health page shows the age of every feed.
+3. Let the first content updates run (the worker queues them at its first start; Grype's database also updates daily at 07:30 UTC). The scanner health page shows the age of every feed.
 4. SAST scan -> register an application "smoke-test" (internal), a version `main`, a zip target: upload `backend/tests/fixtures/sample-apps/python-planted` zipped
    (`cd backend/tests/fixtures/sample-apps && zip -r /tmp/python-planted.zip python-planted`). Start a scan with the `code-standard` profile.
 5. Watch the live log. Each job ends `imported`; the scan detail shows findings; open the report and download the PDF (it carries your name as a watermark).
@@ -264,10 +255,10 @@ Nothing changes silently: every image is pinned by digest and every update waits
 
 | Cadence | Task | Who | Runbook |
 | --- | --- | --- | --- |
-| Daily, automatic | Grype and NVD databases, GitHub poll, triage state refresh | the platform | `docs/runbooks/content-update-failed.md` when an alert fires |
+| Daily, automatic | Grype database, GitHub poll, triage state refresh | the platform | `docs/runbooks/content-update-failed.md` when an alert fires |
 | Weekly, automatic | Semgrep rules and Nuclei templates, behind the regression check | the platform | `docs/runbooks/content-update-failed.md` |
 | Monthly | Review and approve proposed scanner images (`GET /api/v1/image-versions`; the Settings page for it is listed in `docs/build-notes/M11.md`); review alerts, the import queue and the DefectDojo accounts | security team | `docs/runbooks/approving-image-digest.md` |
-| Quarterly | SecureScan and DefectDojo releases, OS and Docker patches, the **restore drill** | IT team | `release-upgrade.md`, `defectdojo-upgrade.md`, `sonarqube-upgrade.md`, `restore.md` |
+| Quarterly | SecureScan and DefectDojo releases, OS and Docker patches, the **restore drill** | IT team | `release-upgrade.md`, `defectdojo-upgrade.md`, `restore.md` |
 | Yearly | Rule packs, profiles, verdict policy, role assignments, licence terms, the pinned GitHub API version, the Entra client secret and GitHub App key | security team | `credential-rotation.md`, `github-app-key-rotation.md` |
 | Every 3 to 4 years | Python, PostgreSQL and Node build versions | code owner | `release-upgrade.md` |
 
@@ -276,6 +267,6 @@ Announce a maintenance window before a release upgrade: scans in progress are fi
 ## 13. Day-2 pointers
 
 - Stuck scan, orphaned container: `docs/runbooks/stuck-scan.md`. DefectDojo not reachable or rejecting imports: `docs/runbooks/defectdojo-unreachable.md`.
-- Break-glass: DefectDojo `admin` (password `deploy/secrets/dd_admin_password`) and the SonarQube admin (`sonarqube_admin_password`). Every use raises an alert; write down who used it and why.
+- Break-glass: DefectDojo `admin` (password `deploy/secrets/dd_admin_password`). Every use raises an alert; write down who used it and why.
 - Performance and growth: `docs/runbooks/performance.md`. History, reports and raw reports are kept forever; plan disk growth accordingly.
 - Hardening and what was verified: `docs/security-checklist.md`.

@@ -36,12 +36,10 @@ PERIODIC_TASK_NAMES = (
     "github_discovery",
     "github_poll",
     "grype_db_update",
-    "nvd_update",
     "rules_and_templates_update",
     "image_update_proposals",
     "account_expiry",
     "credential_expiry_alerts",
-    "sonarqube_idle_stop",
     "egress_idle_stop",
 )
 

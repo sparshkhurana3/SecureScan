@@ -83,7 +83,7 @@ STEP="verify the checksums"
 [ -f "$SET_DIR/SHA256SUMS" ] || die "SHA256SUMS is missing in $SET_DIR"
 (cd "$SET_DIR" && sha256sum --quiet -c SHA256SUMS) || die "checksum mismatch: the set is damaged or incomplete; fetch it again"
 log "checksums ok for $SET_NAME"
-for must in db-securescan.dump.age db-defectdojo.dump.age db-sonarqube.dump.age artifacts.tar.age defectdojo_media.tar.age; do
+for must in db-securescan.dump.age db-defectdojo.dump.age artifacts.tar.age defectdojo_media.tar.age; do
   [ -f "$SET_DIR/$must" ] || die "part $must is missing from the set"
 done
 
@@ -173,13 +173,13 @@ for _ in $(seq 1 60); do
   sleep 5
 done
 [ "$health" = "healthy" ] || die "the db container did not become healthy within 5 minutes (docker logs $db_container)"
-for name in securescan defectdojo sonarqube; do
+for name in securescan defectdojo; do
   docker exec "$db_container" psql --username postgres --no-password -tAc "select 1 from pg_database where datname = '$name'" | grep -q 1 \
     || die "the database $name was not created by the init script (it runs only on an empty data directory)"
 done
 
 # --------------------------------------------------------------------------------------------- 5. databases and volumes
-for name in securescan defectdojo sonarqube; do
+for name in securescan defectdojo; do
   STEP="restore database $name"
   log "restoring database $name"
   decrypt "db-$name.dump.age" | docker exec -i "$db_container" pg_restore --username postgres --dbname "$name" \

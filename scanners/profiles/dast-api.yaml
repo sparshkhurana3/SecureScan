@@ -1,15 +1,16 @@
 # DAST API: ZAP API definition import plus active scan, then Nuclei. UAT targets with an API definition only.
+# Version 2: limits lowered for the 4 vCPU / 8 GB sizing (docs/decisions.md, 2026-10-21).
 profile: dast-api
-version: 1
+version: 2
 kind: dast
 mode: api
 description: ZAP API scan (OpenAPI, GraphQL or SOAP) followed by Nuclei. UAT targets only.
 jobs:
   - tool: zap
     timeout_min: 480
-    limits: {cpus: 2, memory: 4g}
+    limits: {cpus: 2, memory: 3g}
   - tool: nuclei
     timeout_min: 120
-    limits: {cpus: 2, memory: 2g}
+    limits: {cpus: 2, memory: 1536m}
 verdict:
   fail_on: {critical: 1, high: 3}

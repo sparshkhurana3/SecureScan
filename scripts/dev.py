@@ -28,19 +28,16 @@ GENERATED_SECRETS: dict[str, int | None] = {
     "postgres_superuser_password": 24,
     "securescan_db_password": 24,
     "defectdojo_db_password": 24,
-    "sonarqube_db_password": 24,
     "securescan_master_key": 32,
     "dd_admin_password": 24,
     "dd_secret_key": 32,
     "dd_credential_aes_256_key": 16,  # 32 hex characters: DefectDojo wants a 32-character AES-256 key
-    "sonarqube_admin_password": 24,
     "oidc_client_secret": None,
 }
 
 # Networks that only on-demand containers join. Compose does not create a network no service uses, so they are
 # declared `external` in compose.yaml and created here (name, internal).
 ON_DEMAND_NETWORKS: list[tuple[str, bool]] = [
-    ("securescan_sonarqube", True),  # SonarQube server and its scanner: no route out
     ("securescan_dast", True),  # DAST scanners and the target-facing proxy: no route out
     ("securescan_egress", False),  # the shared squid proxy's way to the internet
 ]

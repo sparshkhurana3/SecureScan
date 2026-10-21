@@ -17,10 +17,10 @@ scanners:
       - {name: content, target: /content/nuclei-templates, read_only: true}
     tmpfs:
       - {path: /tmp, size: 256m}
-    limits: {cpus: 2, memory: 2g, pids: 256}
+    limits: {cpus: 2, memory: 1536m, pids: 256}
     timeout_minutes: 120
     max_parallel: 1
-    lock: dast
+    lock: scanner
     env:
       HOME: /tmp
       XDG_CONFIG_HOME: /tmp/.config

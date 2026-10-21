@@ -89,7 +89,7 @@ def test_plan_deferrals_use_catalogue_caps(monkeypatch: pytest.MonkeyPatch) -> N
     plans = scans_module.plan_deferrals(scan, jobs, uuid.uuid4())  # type: ignore[arg-type]
     assert [p.tool for p in plans] == ["semgrep", "gitleaks", "semgrep"]
     for plan in plans:
-        assert plan.lock in {f"tool:{plan.tool}:0", f"tool:{plan.tool}:1"}  # max_parallel 2 for both tools
+        assert plan.lock == "scanner"  # every scan tool shares one lock: one scanner container at a time
         assert plan.queueing_lock.startswith("scan:")
     assert plans[0].queueing_lock == plans[2].queueing_lock  # the same tool collapses
     assert plans[0].queueing_lock != plans[1].queueing_lock
@@ -290,7 +290,7 @@ PROFILE_DOC = ProfileDoc.model_validate(
         "version": 1,
         "kind": "sast",
         "jobs": [
-            {"tool": "semgrep", "timeout_min": 60, "limits": {"cpus": 2, "memory": "4g"}},
+            {"tool": "semgrep", "timeout_min": 60, "limits": {"cpus": 2, "memory": "2g"}},
             {"tool": "gitleaks"},
         ],
     }
@@ -386,7 +386,7 @@ async def test_create_scan_writes_one_job_per_profile_tool(monkeypatch: pytest.M
     assert scan.options["fingerprint"]
     assert [j.tool for j in result.jobs] == ["semgrep", "gitleaks"]
     assert all(j.state == J.QUEUED for j in result.jobs)
-    assert result.jobs[0].options == {"timeout_minutes": 60, "limits": {"cpus": 2.0, "memory": "4g"}, "exclude": ["*.gen.js"]}
+    assert result.jobs[0].options == {"timeout_minutes": 60, "limits": {"cpus": 2.0, "memory": "2g"}, "exclude": ["*.gen.js"]}
     assert result.jobs[1].options == {}
     actions = [getattr(row, "action", None) for row in session.added]
     assert "scan.create" in actions

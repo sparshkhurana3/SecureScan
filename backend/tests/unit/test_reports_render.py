@@ -125,7 +125,7 @@ APPLICATION_OUTLINE = [
     "Semgrep CE 1.179.0 sha256:" + "ab" * 32 + " semgrep_rules: 2026-10-03",
     "Methodology Each tool in the list above ran as a separate, isolated job.",
     "Known limits Semgrep CE traces taint only within one function",
-    "Semgrep's rules and SonarQube's analyzers are free but not open source.",
+    "Semgrep's rules are free but not open source.",
     "Review Review state Automatic, not yet reviewed Verdict Fail (proposed by the policy)",
     f"Report hash (SHA-256 of the frozen snapshot): {HASH}",
 ]

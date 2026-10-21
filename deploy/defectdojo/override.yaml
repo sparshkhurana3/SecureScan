@@ -11,6 +11,10 @@
 #     the SecureScan session. The network is `internal`, so DefectDojo cannot reach the Internet.
 #   * `depends_on` on the removed `postgres` service is dropped. DefectDojo's entrypoints wait for `db:5432`
 #     themselves (wait-for-it, up to 300 s). The initializer retries on failure.
+#   * Sized for the 4 vCPU / 8 GB machine (docs/decisions.md, 2026-10-21): two uwsgi processes, one celery
+#     worker process (solo pool), and CPU and memory limits on every service. Check the DD_UWSGI_* and
+#     DD_CELERY_WORKER_* names against docker/entrypoint-uwsgi.sh and entrypoint-celery-worker.sh whenever
+#     the upstream file is replaced.
 #
 # Names this file relies on (check them against the upstream file whenever it is replaced): services nginx,
 # uwsgi, celerybeat, celeryworker, initializer, postgres, valkey; entrypoint scripts /entrypoint-uwsgi.sh,
@@ -36,6 +40,12 @@ x-dd-env: &dd_env
   DD_DATABASE_READINESS_TIMEOUT: "300"
   DD_SESSION_COOKIE_SECURE: "True"
   DD_CSRF_COOKIE_SECURE: "True"
+  # Small-machine sizing: SecureScan imports one report at a time, so one celery process keeps up.
+  DD_UWSGI_NUM_OF_PROCESSES: "2"
+  DD_UWSGI_NUM_OF_THREADS: "2"
+  DD_CELERY_WORKER_POOL_TYPE: solo
+  DD_CELERY_WORKER_CONCURRENCY: "1"
+  DD_CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
 
 x-dd-secrets: &dd_secrets
   - dd_database_url
@@ -50,6 +60,9 @@ services:
     restart: unless-stopped
     ports: !reset []
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64m }
 
   uwsgi:
     image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
@@ -72,6 +85,9 @@ services:
         read_only: true
     secrets: *dd_secrets
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "1.5", memory: 1g }
 
   celerybeat:
     image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
@@ -94,6 +110,9 @@ services:
         read_only: true
     secrets: *dd_secrets
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 192m }
 
   celeryworker:
     image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
@@ -116,6 +135,9 @@ services:
         read_only: true
     secrets: *dd_secrets
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 768m }
 
   initializer:
     image: "${IMG_DD_DJANGO:-defectdojo/defectdojo-django:3.4.0}"
@@ -141,6 +163,9 @@ services:
       - source: dd_tls_ca
         target: tls_ca
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1g }     # one-shot: runs the database migrations, then exits
 
   # The bundled database is never started: the service stays defined (upstream references it) but only
   # runs under the profile `disabled`, which nothing activates.
@@ -151,6 +176,9 @@ services:
     image: "${IMG_DD_VALKEY:-valkey/valkey:9.1.2-alpine}"
     restart: unless-stopped
     networks: [dojo]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128m }
 
 networks:
   dojo:
