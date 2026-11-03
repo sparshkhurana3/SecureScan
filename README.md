@@ -1,7 +1,7 @@
 # SecureScan
 
-On-premises SAST and DAST scanning platform for Sona Comstar. It runs free scanners as on-demand containers, loads every
-result into a bundled DefectDojo, keeps a permanent queryable history, and produces SonaComstar-branded reports.
+On-premises SAST and DAST scanning platform for IT Operations. It runs free scanners as on-demand containers, loads every
+result into a bundled DefectDojo, keeps a permanent queryable history, and produces Company-branded reports.
 One Ubuntu 24 machine, Docker Compose.
 
 - Design: [docs/design.md](docs/design.md)
